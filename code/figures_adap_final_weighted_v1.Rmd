@@ -1,0 +1,3386 @@
+---
+title: "figures_adap"
+output: html_document
+date: "2026-01-09"
+editor_options: 
+  chunk_output_type: console
+---
+# run after all the datasets and models throuhg fig 4 have been run
+# save.image("~/eiee/capable/2.2_survey/wave2/core/mitig_adap_paper_data.RData")
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Sanford/Documents/eiee/capable/2.2_survey/wave2/core")
+
+### Packages
+pacman::p_load(dplyr, stringr, tidyr, haven, ggplot2, ggimage, broom, kableExtra, stargazer, forcats, patchwork, srvyr, ggsci, rio, ggpattern, lubridate, knitr, psych,showtext, ggtext, relaimpo,purrr)
+library(tidyverse)   # ggplot2, dplyr, tidyr, forcats, etc.
+library(ggpubr)
+library(dplyr)
+library(ggplot2)
+library(modelsummary)
+library(RCT)
+library(survey)
+
+#font_add_google("Noto Sans", "notosans")
+#showtext_auto()
+
+```
+
+```{r load_data}
+
+
+w1 <- read.csv("C:/Users/Sanford/Documents/eiee/capable/2.2_survey/wave1/core/clean_w1_data_groups.csv")
+nrow(w1)
+w1$wave = 1 
+
+w2 <- read.csv("C:/Users/Sanford/Documents/eiee/capable/2.2_survey/wave2/core/wave2_core_clean_withweights.csv")
+#w2_check <- read.csv("C:/Users/Sanford/Documents/eiee/capable/2.2_survey/wave2/core/wave2_core_clean_withweights.csv")
+nrow(w2)
+w2$wave = 2 
+
+# table(w2$male_female)
+# table(w2$quota_gndr)
+# table(w2$quota_educ_category)
+# table(w2$cntry)
+# table(w2$attn_check_overall)
+
+
+#w2$cntry[w2$cntry == "country name in english"] <- "Poland"
+
+# make cntry variable consistent
+country_map <- c("France" = "FR", "Germany" = "DE", "Greece" = "GR", 
+                 "Hungary" = "HU", "Italy" = "IT", "The Netherlands" = "NL", 
+                 "Poland" = "PL", "Slovenia" = "SI", "Spain" = "ES", 
+                 "Lithuania" = "LT")
+
+# Replace country names with abbreviations
+w2 <- w2 %>%
+  mutate(cntry = country_map[cntry])
+table(w2$cntry)
+
+# Drop countries with no adaptation data: SE, DK, AT, CZ, LT
+drop <- c("SE","DK","AT","CZ", 'LT')
+
+table(w1$cntry)
+
+w1 <- w1 %>% 
+  filter(! cntry %in% drop)
+
+w2 <- w2 %>% 
+  filter(! cntry %in% drop)
+
+table(w2_check$cntry,useNA = 'always')
+table(w1$cntry,useNA = 'always')
+
+# Fix income for both waves 
+w1$hh_inc[w1$hh_inc == -99] <- NA 
+w1$hh_inc[w1$hh_inc == -98] <- NA 
+
+w2$hh_inc[w2$hh_inc == -99] <- NA 
+w2$hh_inc[w2$hh_inc == -98] <- NA 
+
+nrow(w1)+nrow(w2)
+
+# W2 education needs fixing 
+w2 <- w2 %>%
+  mutate(
+    quota_group_educ = case_when(
+      
+      # Prefer not to answer to NA
+      quota_educ < 0 ~ NA, 
+      
+      # System 1
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ == 1 ~ 1, 
+      
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ == 2 ~ 2, 
+      
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ == 3 ~ 2, 
+      
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ > 3 ~ 3, 
+      
+      # System 2
+      (cntry == "NL" | cntry == "FR") &
+        quota_educ > 0 & quota_educ < 4 ~ 1,       
+      
+      (cntry == "NL" | cntry == "FR") &
+        quota_educ > 3 & quota_educ < 6 ~ 2,
+      
+      (cntry == "NL" | cntry == "FR") &
+        quota_educ > 5 ~ 3,
+      
+      # System 3 
+      cntry == "DE" &
+        quota_educ > 0 & quota_educ < 3 ~ 1,       
+      
+      cntry == "DE" &
+        quota_educ > 2 & quota_educ < 7 ~ 2, 
+      
+      cntry == "DE" &
+        quota_educ > 6 ~ 3, 
+      
+      # CUNI
+      cntry == "CZ" & 
+        quota_educ > 0 &  quota_educ < 5 ~ 1, 
+      cntry == "CZ" & 
+        quota_educ > 4 &  quota_educ < 8 ~ 2,
+      cntry == "CZ" & 
+        quota_educ > 7 ~ 3,
+      
+      cntry == "ES" & 
+        quota_educ > 0 &  quota_educ < 7 ~ 1, 
+      cntry == "ES" & 
+        quota_educ > 6 &  quota_educ < 10 ~ 2,
+      cntry == "ES" & 
+        quota_educ > 9 ~ 3,
+      
+      cntry == "SE" & 
+        quota_educ == 1 ~ 1, 
+      cntry == "SE" & 
+        quota_educ > 1 &  quota_educ < 4 ~ 2,
+      cntry == "SE" & 
+        quota_educ > 3 ~ 3,
+    ),
+    educ_low = ifelse(quota_group_educ == 1, 1, 0), 
+    educ_mid = ifelse(quota_group_educ == 2, 1, 0), 
+    educ_high = ifelse(quota_group_educ == 3, 1, 0), 
+    quota_group_educ = factor(quota_group_educ,levels=c(1,2,3))
+)
+
+table(w2$quota_group_educ)
+
+# Create survey design objects for w1 and w2
+w1_design <- svydesign(ids = ~1, weights = ~weights, data = w1)
+w2_design <- svydesign(ids = ~1, weights = ~weights, data = w2)
+
+table(w1$quota_group_educ)
+table(w2$quota_educ_category)
+table(w2$quota_group_educ)
+
+```
+
+```{r timing}
+
+w1 %>% 
+  group_by(cntry) %>% 
+  summarise(
+    median_time = median(duration)/60
+  )
+
+w2 %>% 
+  group_by(cntry) %>% 
+  summarise(
+    median_time = median(duration)/60
+  )
+
+```
+
+```{r general vars}
+
+# Define colors for each policy
+policy_colors <- c(
+  "General mitigation" = "#9E3D22",                              # Dark orange
+  "General adaptation" = "#2B5C8A",                              # Dodger blue
+  "Tax fossil fuel profits" = "#EA782D",     # Light orange
+  "Mandatory insulation" = "#FFD4A5",          # Medium orange
+  "Building restrictions" = "#5386B3",        # Sky blue
+  "Resilience investment" = "#C9E1F0" ,         # Steel blue
+  #"Tax beef" = "#D2293D",
+  "Tax flights" = "#D2293D" #FEB1A3
+)
+
+all_pols = c('EU_pol_build', 'EU_pol_waterconserve','gen_sup_mtgn','gen_sup_adpn', "CNTY_pol_insu", "CNTY_pol_taxff", "CNTY_pol_taxfly", "car_phase_all", "car_phase_exc", "ETS_gen_support", "ETS_II_transp", "ETS_II_heat", "ETS_II_ag", "CBAM", 
+"EU_pol_beef", "EU_pol_rail", "EU_pol_pfli", "EU_pol_adban")# 'CNTY_pol_beef_w1','CNTY_pol_beef_w2', "CNTY_pol_beef",
+
+w1_pols = c("CNTY_pol_insu", "CNTY_pol_taxff", "CNTY_pol_taxfly", "car_phase_all", "car_phase_exc", 
+"ETS_gen_support", "ETS_II_transp", "ETS_II_heat", "ETS_II_ag", "CBAM", 
+"EU_pol_beef", "EU_pol_rail", "EU_pol_pfli", "EU_pol_adban") #"CNTY_pol_beef",
+
+w1_targ_pols = c("CNTY_pol_insu", "CNTY_pol_taxff","CNTY_pol_taxfly") # ,"CNTY_pol_beef"
+
+w2_pols = c('EU_pol_build', 'EU_pol_waterconserve','gen_sup_mtgn','gen_sup_adpn')#"CNTY_pol_beef"
+
+impact_labels <- c(
+  "imp_exp_wb" = "Wellbeing",
+  "imp_exp_econ" = "National\neconomy",
+  "imp_exp_fin" = "Household\nfinances",
+  "imp_exp_goal" = "Effectiveness",
+  "fair_lowinc" = "On low income\nhouseholds*",
+  "fair_mdlcls" = "On middle class\nhouseholds*"
+)
+
+preds_w1 <- c(
+  "imp_exp_wb", "imp_exp_econ", "imp_exp_fin", "imp_exp_ghg_re",
+  "gen_trust_cnty", "gen_trust_EU", "poli_ori", "clim_worry", "val_bio1",
+  "imp_exp_pol_assign", "cntry", "female", "quota_age",
+  "quota_educ", "rural_urban"
+)
+
+preds_w2 <- c(
+  "imp_exp_wb","imp_exp_econ", "imp_exp_fin", "imp_exp_CNTY_ghg", "imp_exp_EU_adap",
+  "gen_trust_cnty", "gen_trust_EU", "poli_ori", "clim_worry", "val_bio",
+  "imp_exp_condition", "cntry", "female", "quota_age",
+  "quota_educ", "rural_urban",'risk_falk_2','time_falk_2','inequality','ambiguity_0.10')
+
+
+pols = c("CNTY_pol_insu", "CNTY_pol_taxff","CNTY_pol_taxfly",'EU_pol_build', 'EU_pol_waterconserve','gen_sup_mtgn','gen_sup_adpn')
+
+```
+
+```{r combine_data_long}
+# Combine W1 and W2 data 
+
+
+# Convert both to long for policy values, select/create common columns as necessary, then concat 
+# Pivot longer while preserving the survey design
+w1_long <- w1 %>%
+  dplyr::select(cntry, weights, all_of(w1_targ_pols)) %>%
+  mutate(mitig_adap = 0) %>% 
+  pivot_longer(cols = w1_targ_pols,
+               names_to = "policy",
+               values_to = "score") %>%
+  mutate(specific = 1)
+
+w2_long <- w2 %>%
+  dplyr::select(cntry, weights, all_of(w2_pols)) %>%
+  pivot_longer(cols = w2_pols,
+               names_to = "policy",
+               values_to = "score") %>% 
+  mutate(
+    specific = ifelse(policy %in% c('gen_sup_mtgn','gen_sup_adpn'), 0, 1),
+    mitig_adap = ifelse(policy %in% c('gen_sup_adpn','EU_pol_build', 'EU_pol_waterconserve'), 1, 0)
+  )
+
+both <- rbind(w1_long, w2_long)
+
+# Create survey design for the combined long data
+both_design <- svydesign(ids = ~1, weights = ~weights, data = both)
+
+# write.csv(both,'w1_w2_combined_long.csv')
+```
+
+```{r beeftax}
+
+w1 %>%
+  summarise(
+    mean = mean(CNTY_pol_beef, na.rm = TRUE),
+    median = median(CNTY_pol_beef, na.rm = TRUE),
+    count = n()
+  )
+
+
+w2 %>% 
+  filter(cnty_percent == 10) %>% 
+   summarise(
+    mean = mean(CNTY_pol_beef, na.rm = TRUE),
+    median = median(CNTY_pol_beef, na.rm = TRUE),
+    count = n()
+  )
+
+w2 %>% 
+  filter(cnty_percent == 50) %>% 
+   summarise(
+    mean = mean(CNTY_pol_beef, na.rm = TRUE),
+    median = median(CNTY_pol_beef, na.rm = TRUE),
+    count = n()
+  )
+
+summary(lm(CNTY_pol_beef ~ as.factor(cnty_percent),data=w2))
+
+
+w1_long_beef <- w1_full %>%
+  dplyr::select(cntry, weights, all_of('CNTY_pol_beef')) %>%
+  pivot_longer(cols = 'CNTY_pol_beef',
+               names_to = "policy",
+               values_to = "score") 
+
+# Calculate weighted proportion supporting each policy (score >= 5)
+support_stats <- w1_long_beef %>%
+  mutate(supports = ifelse(score >= 5, 1, 0)) %>%
+  svydesign(ids = ~1, weights = ~weights, data = .) %>%
+  svyby(
+    ~supports,
+    ~policy + cntry,  # Added cntry here
+    design = .,
+    FUN = svymean,
+    na.rm = TRUE,
+    vartype = c("se", "ci")
+  ) %>%
+  mutate(
+    pct_support = supports * 100,
+    pct_se = se * 100,
+    pct_lower = ci_l * 100,
+    pct_upper = ci_u * 100
+  ) %>%
+  dplyr::select(policy, cntry, pct_support, pct_se, pct_lower, pct_upper)  # Added cntry here too
+
+print(support_stats)
+
+```
+
+```{r combine_data_normal}
+
+w1_rec <- w1 %>%   
+  mutate(across(
+    c(CNTY_pol_taxff, CNTY_pol_insu, CNTY_pol_taxfly),
+    as.numeric
+  )) %>%
+  mutate(
+    imp_exp_ghg_re     = 8 - imp_exp_ghg, # first, recode the ghg emissions red socres
+    mitig_adap = 0,
+    imp_exp_goal = imp_exp_ghg_re, # set it to goal expectancy 
+    imp_exp_pol_assign = factor(imp_exp_pol_assign),
+    pol_all = case_when(
+      imp_exp_pol_assign == 2 ~ CNTY_pol_taxff,
+      imp_exp_pol_assign == 3 ~ CNTY_pol_insu,
+      imp_exp_pol_assign == 4 ~ CNTY_pol_taxfly,
+      TRUE                   ~ NA_real_
+    ),
+    cntry = factor(cntry),
+    female             = factor(female),
+    quota_educ = factor(quota_educ),
+    quota_group_educ = factor(quota_group_educ), 
+    quota_age          = factor(quota_age),
+    rural_urban        = factor(rural_urban),
+    rural = factor(ifelse(rural_urban == 1 | rural_urban == 2, 1, 0)),
+    imp_exp_pol_assign = case_when(
+      imp_exp_pol_assign == 2  ~ 'Tax fossil fuel profits',
+      imp_exp_pol_assign == 3 ~ 'Mandatory insulation',
+      imp_exp_pol_assign == 4 ~ 'Tax flights',
+      TRUE                   ~ NA),
+    EU_pol_build = NA,
+    EU_pol_waterconserve = NA,
+    gen_sup_mtgn = NA,
+    gen_sup_adpn = NA,
+    fair_lowinc = NA,
+    fair_mdlcls = NA
+  ) %>%
+  dplyr::select(
+     c(imp_exp_pol_assign, imp_exp_goal, pol_all, cntry, val_bio1, female,rural,
+      quota_age, quota_educ, rural_urban, mitig_adap, clim_worry, gen_trust_cnty,quota_group_educ,
+      gen_trust_EU, poli_ori,imp_exp_wb,imp_exp_econ,imp_exp_fin,hh_inc,fair_lowinc,fair_mdlcls), all_of(w1_targ_pols), all_of(w2_pols), weights, wave
+  )
+
+
+w2_rec <- w2 %>% 
+  mutate(across(all_of(w2_pols),
+    as.numeric
+  )) %>%
+  mutate(
+    imp_exp_ghg_re = 8 - imp_exp_CNTY_ghg,
+    imp_exp_pol_assign = factor(imp_exp_condition),
+    imp_exp_goal = case_when(
+      (imp_exp_pol_assign == 'build' | imp_exp_pol_assign == 'waterconserve') ~ imp_exp_EU_adap,
+      TRUE                   ~ NA_real_
+    ),
+    pol_all = case_when(
+      imp_exp_pol_assign == 'build' ~ EU_pol_build,
+      imp_exp_pol_assign == 'waterconserve' ~ EU_pol_waterconserve,
+      TRUE                   ~ NA_real_
+    ),
+     imp_exp_pol_assign = case_when(
+      imp_exp_condition == 'build' ~ 'Building restrictions',
+      imp_exp_condition == 'waterconserve' ~ 'Resilience investment',
+      TRUE                   ~ NA
+    ),
+    cntry = factor(cntry),
+    val_bio1 = val_bio,
+    female = ifelse(quota_gndr == 2, 1, 0), 
+    female             = factor(female),
+    quota_educ = factor(quota_educ),
+    quota_group_educ = factor(quota_group_educ),
+    quota_age          = factor(quota_age),
+    rural_urban        = factor(rural_urban),
+    rural = factor(ifelse(rural_urban == 1 | rural_urban == 2, 1, 0)),
+    mitig_adap = case_when(
+      (imp_exp_pol_assign == 'Building restrictions' | imp_exp_pol_assign == 'Resilience investment') ~ 1,
+    ),
+    CNTY_pol_insu = NA,
+    CNTY_pol_taxff = NA,
+    CNTY_pol_taxfly = NA,
+  ) %>%
+  dplyr::select(
+    c(imp_exp_pol_assign, imp_exp_goal, pol_all, cntry, val_bio1, female, rural,
+      quota_age, quota_educ,quota_group_educ, rural_urban, mitig_adap, clim_worry, gen_trust_cnty,
+      gen_trust_EU, poli_ori,imp_exp_wb,imp_exp_econ,imp_exp_fin,hh_inc,fair_lowinc,fair_mdlcls), all_of(w2_pols),all_of(w1_targ_pols), weights, wave
+  ) 
+
+
+
+# Combine 
+full_rec = rbind(w1_rec,w2_rec)
+table(full_rec$rural)
+table(full_rec$quota_group_educ)
+
+# Fix education -- not necessary
+full_rec <- full_rec %>% 
+  mutate(
+    quota_group_educ = case_when(
+      
+      # Prefer not to answer to NA
+      quota_educ < 0 ~ NA, 
+      
+      # System 1
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ == 1 ~ 1, 
+      
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ == 2 ~ 2, 
+      
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ == 3 ~ 2, 
+      
+      (cntry == "AT" | cntry == "DK" | cntry == "GR" | cntry == "HU" | cntry == "IT" | cntry == "PL" | cntry == "SI") &
+        quota_educ > 3 ~ 3, 
+      
+      # System 2
+      (cntry == "NL" | cntry == "FR") &
+        quota_educ > 0 & quota_educ < 4 ~ 1,       
+      
+      (cntry == "NL" | cntry == "FR") &
+        quota_educ > 3 & quota_educ < 6 ~ 2,
+      
+      (cntry == "NL" | cntry == "FR") &
+        quota_educ > 5 ~ 3,
+      
+      # System 3 
+      cntry == "DE" &
+        quota_educ > 0 & quota_educ < 3 ~ 1,       
+      
+      cntry == "DE" &
+        quota_educ > 2 & quota_educ < 7 ~ 2, 
+      
+      cntry == "DE" &
+        quota_educ > 6 ~ 3, 
+      
+      # CUNI
+      cntry == "CZ" & 
+        quota_educ > 0 &  quota_educ < 5 ~ 1, 
+      cntry == "CZ" & 
+        quota_educ > 4 &  quota_educ < 8 ~ 2,
+      cntry == "CZ" & 
+        quota_educ > 7 ~ 3,
+      
+      cntry == "ES" & 
+        quota_educ > 0 &  quota_educ < 7 ~ 1, 
+      cntry == "ES" & 
+        quota_educ > 6 &  quota_educ < 10 ~ 2,
+      cntry == "ES" & 
+        quota_educ > 9 ~ 3,
+      
+      cntry == "SE" & 
+        quota_educ == 1 ~ 1, 
+      cntry == "SE" & 
+        quota_educ > 1 &  quota_educ < 4 ~ 2,
+      cntry == "SE" & 
+        quota_educ > 3 ~ 3,
+    ),
+    educ_low = ifelse(quota_group_educ == 1, 1, 0), 
+    educ_mid = ifelse(quota_group_educ == 2, 1, 0), 
+    educ_high = ifelse(quota_group_educ == 3, 1, 0), 
+    quota_group_educ = factor(quota_group_educ,levels=c(1,2,3)),#,labels=c('Low','Mid','High'))
+  )
+
+# Check female variable
+full_rec %>% 
+  group_by(female) %>% 
+  summarise(across(pols, ~ mean(., na.rm = TRUE)))
+
+# Check age variable
+full_rec %>% 
+  group_by(quota_age) %>% 
+  summarise(across(pols, ~ mean(., na.rm = TRUE)))
+
+#write.csv(full_rec,'w1_w2_combined.csv')
+
+```
+
+```{r standardise}
+
+# Standardise required variables within each wave
+
+standardize_continuous <- function(data, vars_to_standardize, weights_var = "weights") {
+  data_std <- data
+  
+  for (var in vars_to_standardize) {
+    if (is.numeric(data[[var]])) {
+      # Weighted mean and SD
+      w_mean <- weighted.mean(data[[var]], w = data[[weights_var]], na.rm = TRUE)
+      w_var <- weighted.mean((data[[var]] - w_mean)^2, 
+                             w = data[[weights_var]], na.rm = TRUE)
+      w_sd <- sqrt(w_var)
+      
+      # Standardize
+      data_std[[paste0(var, "_z")]] <- (data[[var]] - w_mean) / w_sd
+    }
+  }
+  
+  return(data_std)
+}
+
+# Apply to each wave based on recoded version of the wave data
+wave1_std <- standardize_continuous(w1_rec, 
+                                    vars_to_standardize = c("clim_worry", "val_bio1",
+                                                            'poli_ori','gen_trust_cnty',
+                                                            'gen_trust_EU','hh_inc',
+                                                            'imp_exp_econ','imp_exp_goal',
+                                                            'imp_exp_wb','imp_exp_fin'),
+                                    weights_var = "weights")
+
+wave2_std <- standardize_continuous(w2_rec, 
+                                    vars_to_standardize = c("clim_worry", "val_bio1",
+                                                            'poli_ori','gen_trust_cnty',
+                                                            'gen_trust_EU','hh_inc',
+                                                            'imp_exp_econ','imp_exp_goal',
+                                                            'imp_exp_wb','imp_exp_fin'),
+                                    weights_var = "weights")
+class(wave2_std$quota_group_educ)
+
+# Combine standardised wave data 
+full_rec_std = rbind(wave1_std, wave2_std)
+```
+
+```{r balance}
+library(estimatr)
+
+# table(full_rec$quota_age)
+# full_rec_sub <- full_rec %>%
+#   mutate(
+#     quota_educ = factor(quota_educ),
+#     #quota_age = factor(quota_age)
+#   ) %>% 
+#   select(c(wave,quota_educ,quota_age))
+# 
+# table(full_rec_sub$wave)
+# 
+# balance_table(full_rec_sub,'wave')
+# 
+# datasummary_skim(data_sub,type='categorical')
+# datasummary_balance(~wave, data = full_rec_sub,dinm = T,dinm_statistic = 'p.value')
+# names(data)
+
+table(w1$quota_educ)
+table(w2$quota_educ)
+
+table(w1$quota_group_educ)
+table(w1$quota_group_educ)
+
+table(w1_rec$rural)/nrow(w1)*100
+table(w2_rec$rural)/nrow(w2)*100
+
+# Create a survey design object with your weights
+cntry_targ = 'DE'
+
+svy_design <- svydesign(
+  ids = ~1,  # No clustering
+  weights = ~weights,
+  data = full_rec #%>% filter(cntry == cntry_targ)
+)
+#svychisq(~wave + quota_educ, design = svy_design)
+# svychisq(~ wave + rural, design = svy_design)
+
+sub = full_rec %>% filter(cntry == cntry_targ)
+wave = 2
+table(sub[sub$wave == wave,]$rural)/nrow(sub[sub$wave == wave,])*100
+svychisq(~ wave + rural, design = svy_design)
+
+# For factor variables - Weighted chi-square tests
+svychisq(~wave + quota_age, design = svy_design)
+svychisq(~wave + female, design = svy_design)
+svychisq(~wave + quota_group_educ, design = svy_design)
+
+# For numeric variables - Weighted t-tests
+svyttest(hh_inc ~ wave, design = svy_design)
+svyttest(clim_worry ~ wave, design = svy_design)
+svyttest(val_bio1 ~ wave, design = svy_design)
+svyttest(poli_ori ~ wave, design = svy_design)
+svyttest(gen_trust_cnty ~ wave, design = svy_design)
+svyttest(gen_trust_EU ~ wave, design = svy_design)
+table(full_rec[full_rec$wave == 1,]$cntry)
+table(full_rec[full_rec$wave == 2,]$cntry)
+
+sub = full_rec %>% filter(cntry == 'NL')
+wave = 2
+table(sub[sub$wave == wave,]$quota_group_educ)/nrow(sub[sub$wave == wave,])*100
+
+# For weighted summary statistics by wave
+svyby(~clim_worry + poli_ori + hh_inc + val_bio1 + gen_trust_EU + gen_trust_cnty, ~wave, design = svy_design, svymean, na.rm = TRUE)
+
+# For weighted proportions of factor variables by wave
+svyby(~quota_age, ~wave, design = svy_design, svymean)
+svyby(~female, ~wave, design = svy_design, svymean)
+svyby(~quota_educ, ~wave, design = svy_design, svymean)
+svyby(~quota_group_educ, ~wave, design = svy_design, svymean)
+svyby(~rural, ~wave, design = svy_design, svymean)
+
+median(w2$clim_worry)
+
+```
+
+```{r overall_stats}
+
+library(survey)
+
+# Create survey design for the 'both' dataset
+both_design <- svydesign(ids = ~1, weights = ~weights, data = both)
+
+# Calculate weighted proportion supporting each policy (score >= 5)
+support_stats <- both %>%
+  mutate(supports = ifelse(score >= 5, 1, 0)) %>%
+  svydesign(ids = ~1, weights = ~weights, data = .) %>%
+  svyby(
+    ~supports,
+    ~policy,
+    design = .,
+    FUN = svymean,
+    na.rm = TRUE,
+    vartype = c("se", "ci")
+  ) %>%
+  mutate(
+    pct_support = supports * 100,
+    pct_se = se * 100,
+    pct_lower = ci_l * 100,
+    pct_upper = ci_u * 100
+  ) %>%
+  dplyr::select(policy, pct_support, pct_se, pct_lower, pct_upper)
+
+print(support_stats)
+
+```
+
+theme standard
+```{r}
+theme_standard <- function(base_size = 11) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.title    = element_text(size = base_size * 1.2, face = "bold"),
+      plot.subtitle = element_text(size = base_size),
+      plot.caption  = element_text(size = base_size * 1),
+      
+      axis.title    = element_text(size = base_size * 1.15),
+      axis.text     = element_text(size = base_size * 0.9),
+      
+      legend.title  = element_text(size = base_size),
+      legend.text   = element_text(size = base_size * 1),
+      strip.text    = element_text(size = base_size * 1.15, face = "bold"),
+      strip.text.x = element_text(size = base_size * 1.15, face = "bold"),
+strip.text.y = element_text(size = base_size * 1.15, face = "bold")
+    )
+}
+```
+
+
+
+
+```{r Fig1A}
+
+policies_cols = c('gen_sup_mtgn','gen_sup_adpn')
+
+# Filter and prepare data
+policies_long_raw <- both %>%
+  filter(policy %in% policies_cols) %>%
+  mutate(
+    policy = factor(policy),
+    policy = fct_recode(policy,
+                        "General mitigation" = "gen_sup_mtgn",
+                        "General adaptation" = "gen_sup_adpn")
+  )
+
+policies_long_raw %>% group_by(mitig_adap) %>% summarise(mean = mean(score))
+
+# Create survey design for filtered data
+policies_design <- svydesign(ids = ~1, weights = ~weights, data = policies_long_raw)
+
+# Calculate WEIGHTED means for ordering
+policy_means <- svyby(~score, ~policy, design = policies_design, FUN = svymean, na.rm = TRUE)
+
+# Reorder factor levels by weighted mean
+policies_long_raw <- policies_long_raw %>%
+  left_join(policy_means %>% dplyr::select(policy, score), by = "policy") %>%
+  rename(weighted_mean = score.y, score = score.x) %>%
+  mutate(policy = fct_reorder(policy, weighted_mean,na.rm=T))
+
+library(ggridges)
+
+fig1A <- ggplot(
+  policies_long_raw,
+  aes(x = policy, y = score, fill = policy)
+) +
+  geom_violin(
+    trim = FALSE,
+    alpha = 0.35,
+    width = 0.9
+  ) +
+  geom_boxplot(
+    width = 0.2,
+    outlier.shape = NA,
+    alpha = 0.6
+  ) +
+  scale_fill_manual(values = c(
+    "General mitigation" = "#9E3D22",
+    "General adaptation" = "#2B5C8A"
+  )) +
+  scale_y_continuous(limits = c(0.5, 7.5), breaks = 1:7) +
+  labs(
+    x = "",
+    y = "Support (1–7)",
+    fill = "Policy type"
+  ) +
+  theme_standard() +
+  coord_flip()
+
+fig1A
+
+#Alternative Alessio
+
+# keep only valid Likert values
+df_ok <- policies_long_raw %>%
+  filter(!is.na(score), score >= 1, score <= 7)
+
+# proportions for the 7 bars per policy
+dist_df <- df_ok %>%
+  filter(!is.na(weights), weights >= 0) %>%          # keep valid weights
+  group_by(policy, score) %>%
+  summarise(w = sum(weights), .groups = "drop") %>%  # weighted count per Likert point
+  group_by(policy) %>%
+  mutate(prop = w / sum(w)) %>%                      # weighted share
+  ungroup()
+
+# box components per policy (quartiles + whiskers)
+library(dplyr)
+library(Hmisc)
+
+box_df <- df_ok %>%
+  filter(!is.na(weights), weights >= 0) %>%
+  group_by(policy) %>%
+  summarise(
+    q1  = as.numeric(wtd.quantile(score, weights, probs = 0.25, na.rm = TRUE)),
+    med = as.numeric(wtd.quantile(score, weights, probs = 0.50, na.rm = TRUE)),
+    q3  = as.numeric(wtd.quantile(score, weights, probs = 0.75, na.rm = TRUE)),
+    lo  = min(score, na.rm = TRUE),   # whiskers: keep unweighted (standard practice)
+    hi  = max(score, na.rm = TRUE),
+    .groups = "drop"
+  )
+# choose where the box sits on the y-axis (same in both panels)
+ymin_box <- 0.1
+ymax_box <- 0.2
+
+fig1A <- ggplot() +
+  # grey histogram bars (proportions)
+  geom_col(
+    data = dist_df,
+    aes(x = score, y = prop),
+    fill = "grey75",
+    alpha = 0.5,
+    width = 0.9
+  ) +
+  # IQR box
+  geom_rect(
+    data = box_df,
+    aes(xmin = q1, xmax = q3, ymin = ymin_box, ymax = ymax_box, fill = policy),
+    alpha = 0.85,
+    color = "black",
+    linewidth = 0.4
+  ) +
+  # median line inside the box
+  geom_segment(
+    data = box_df,
+    aes(x = med, xend = med, y = ymin_box, yend = ymax_box),
+    linewidth = 1
+  ) +
+  # whiskers (optional but nice)
+  geom_segment(
+    data = box_df,
+    aes(x = lo, xend = q1, y = (ymin_box + ymax_box)/2, yend = (ymin_box + ymax_box)/2),
+    linewidth = 0.6
+  ) +
+  geom_segment(
+    data = box_df,
+    aes(x = q3, xend = hi, y = (ymin_box + ymax_box)/2, yend = (ymin_box + ymax_box)/2),
+    linewidth = 0.6
+  ) +
+  facet_wrap(~ policy, ncol = 1) +
+  scale_fill_manual(values = c(
+    "General mitigation" = "#9E3D22",
+    "General adaptation" = "#2B5C8A"
+  )) +
+  scale_x_continuous(breaks = 1:7, limits = c(0.5, 7.5)) +
+  scale_y_continuous(limits = c(0, 0.35)) +
+  labs(x = "Support (1–7)", y = "Proportion", fill = "Policy type") +
+  theme_standard() +
+  theme(legend.position = "none")
+
+mean_df <- df_ok %>%
+  group_by(policy) %>%
+  summarise(
+    wmean = weighted.mean(score, w = weights, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(y = (ymin_box + ymax_box) / 2)
+
+tfig1A <- fig1A +
+  geom_point(
+    data = mean_df,
+    aes(x = wmean, y = y),
+    color = "red",
+    size = 3,
+    shape = 18,
+    inherit.aes = FALSE
+  )
+
+fig1A
+
+ggsave('figures_r1/final/alessio/Fig1A_box_WEIGHTED_Alessio.png')
+```
+
+```{r Fig1B}
+
+trdata <- w2[w2$trdoff_mt_ad_updatedvalues_check=='Did Update',]
+#trdata$trdoff_mt
+
+# FOR THE COUNTRY LEVEL
+
+# Create survey design
+trdata_design <- svydesign(ids = ~1, weights = ~weights, data = trdata)
+
+# Calculate weighted country statistics
+country_stats <- svyby(
+  ~trdoff_mt, 
+  ~cntry, 
+  design = trdata_design, 
+  FUN = svymean, 
+  na.rm = TRUE,
+  vartype = c("se", "ci")
+)
+
+# Clean up the column names
+country_stats <- country_stats %>%
+  rename(
+    mean_pref = trdoff_mt,
+    se_pref = se,
+    lower_ci = ci_l,
+    upper_ci = ci_u
+  ) %>%
+  arrange(mean_pref)
+
+# Calculate weighted total mean
+total_mean <- svymean(~trdoff_mt, design = trdata_design, na.rm = TRUE)[1]
+
+# Create the plot
+ggplot(country_stats, aes(x = reorder(cntry, mean_pref), y = mean_pref, color = cntry)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lower_ci, ymax = upper_ci), width = 0.2) +
+  geom_hline(yintercept = total_mean, linetype = "dashed", color = "black") +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(
+    title = "Mean Preference for Adaptation vs Mitigation by Country",
+    subtitle = "0 = Complete Adaptation Preference, 100 = Complete Mitigation Preference",
+    x = "Country",
+    y = "Mean Preference (0–100)",
+    color = "Country"
+  ) +
+  coord_flip() +
+  theme_minimal()
+
+
+# Overall distribution
+fig1B <- ggplot(trdata, aes(x = trdoff_mt, weight = weights)) +
+  #geom_histogram(fill = "steelblue", alpha = 0.5, bins = 40) +  # adjust bins as needed
+  geom_histogram(aes(y = after_stat(count/sum(count))), 
+                 fill = "steelblue", alpha = 0.5, bins = 40) +
+  scale_x_continuous(limits = c(0, 100)) +
+  labs(
+    title = "",
+    x = "Preference (0 = Adaptation, 100 = Mitigation)",
+    y = "Weighted frequency"
+  ) +
+  theme_standard()+
+  theme(strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ))
+fig1B
+ggsave('figures_r1/final/alessio/Fig1B_hist_WEIGHTED_props.png')
+
+# Combine Figures 1A and 1B
+fig1AB <- ggarrange(fig1A,fig1B,labels = c('A','B'),nrow=2)
+fig1AB
+ggsave('figures_r1/final/alessio/Fig1AB_box_hist_WEIGHTED_alessio.png')
+
+# Distribution by country for appendix
+cntry_trade <- ggplot(trdata, aes(x = trdoff_mt, weight = weights)) +
+  geom_histogram(fill = "steelblue", alpha = 0.5,bins=40) +
+  facet_wrap(~ cntry, scales = "free_y") +
+  scale_x_continuous(limits = c(0, 100)) +
+  labs(
+    #title = "Distribution of Mitigation vs Adaptation",
+    x = "Preference (0 = Adaptation, 100 = Mitigation)",
+    y = "Density"
+  ) +
+
+  theme_minimal()
+cntry_trade
+
+ggsave('figures_r1/final/CountryTradeOff_WEIGHTED.png')
+
+#ggarrange(cntry_supp,cntry_trade)
+
+```
+
+```{r Fig2A}
+
+# Create summary statistics 
+library(survey)
+
+# Create survey design for the combined data
+both_design <- svydesign(ids = ~1, weights = ~weights, data = both)
+
+# Calculate weighted summary statistics
+summary_data <- svyby(
+  ~score, 
+  ~cntry + policy + specific + mitig_adap, 
+  design = both_design, 
+  FUN = svymean, 
+  na.rm = TRUE,
+  vartype = c("se", "ci")
+) %>%
+  rename(
+    mean_score = score,
+    se = se,
+    lower_ci = ci_l,
+    upper_ci = ci_u
+  ) %>%
+  mutate(
+    policy = fct_recode(policy,
+                        "General mitigation" = "gen_sup_mtgn",
+                        "General adaptation" = "gen_sup_adpn",
+                        "Resilience investment" = "EU_pol_waterconserve",
+                        "Building restrictions" = "EU_pol_build",
+                        "Tax fossil fuel profits" = "CNTY_pol_taxff",
+                        "Mandatory insulation" = "CNTY_pol_insu",
+                        "Tax flights" = 'CNTY_pol_taxfly'
+    ),
+    specific = factor(specific, levels = c(0, 1), 
+                     labels = c('General policy', 'Specific policy')),
+    policy_type = interaction(specific, mitig_adap, sep = "_")
+  )
+
+# Create color mapping
+summary_data <- summary_data %>%
+  mutate(
+    color_group = case_when(
+      policy == "General mitigation" ~ "General mitigation",
+      policy == "General adaptation" ~ "General adaptation",
+      policy %in% c("Tax fossil fuel profits", "Mandatory insulation",'Tax flights') ~ 
+        paste0("", policy),
+      policy %in% c("Resilience investment", "Building restrictions") ~ 
+        paste0("", policy)
+    ),
+    policy = factor(policy, levels = c('General mitigation','General adaptation',
+                                        'Tax on fossil fuel profits',
+                                        'Mandatory insulation',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions')),
+    mitig_adap = factor(mitig_adap, levels = c(0,1), labels = c('Mitigation','Adaptation'))
+  )
+
+# Rest of your plotting code stays the same
+cntry_supp <- ggplot(summary_data, aes(x = cntry, y = mean_score, 
+                                        color = color_group)) +
+  geom_point(data = summary_data %>% filter(specific == "Specific policy"),
+             aes(shape = mitig_adap),
+             size = 4) +
+  geom_point(data = summary_data %>% filter(specific == "General policy"),
+             aes(shape = mitig_adap),
+             size = 6) +
+  geom_errorbar(data = summary_data %>% filter(specific == "General policy"),
+                aes(ymin = lower_ci, ymax = upper_ci),
+                width = 0.1) +
+  geom_errorbar(data = summary_data %>% filter(specific == "Specific policy"),
+                aes(ymin = lower_ci, ymax = upper_ci),
+                width = 0.1) +
+  scale_x_discrete(limits = rev) +
+  geom_hline(yintercept=4, linetype = "dashed", colour = "grey40") +
+  scale_y_continuous(limits = c(1, 7), breaks = seq(1,7,1),
+                     labels = c('1: Strongly\nopposed','2','3','4: Neutral',
+                                '5','6','7: Strongly\nin favour')) +
+  scale_shape_manual(values = c(17, 16),
+                     name = "Policy Type") +
+  scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c('General mitigation','General adaptation',
+                                'Tax fossil fuel profits',
+                                'Mandatory insulation',
+                                'Tax flights',
+                                'Resilience investment',
+                                'Building restrictions')) +
+  labs(
+    title = "",
+    x = "Country",
+    y = "Average Support"
+  ) +
+  coord_flip() +
+  theme_minimal() + 
+  theme(
+    legend.position = "bottom",
+    axis.text.x = element_text(size=11),
+    axis.text.y = element_text(size = 12),
+    axis.title.x.bottom = element_text(size = 11),
+    axis.title.y.left = element_blank(),
+    legend.text = element_text(size=11)
+  ) +
+  guides(
+    color = guide_legend(
+      nrow = 2,
+      override.aes = list(
+        shape = c(17, 16, 17, 17, 17, 16, 16)
+      )
+    ),
+    shape = guide_legend(nrow = 2)
+  )
+
+cntry_supp
+
+cntry_supp <- ggplot(summary_data, aes(x = cntry, y = mean_score, color = color_group)) +
+  geom_point(
+    data = summary_data %>% dplyr::filter(specific == "Specific policy"),
+    aes(shape = mitig_adap),
+    size = 4
+  ) +
+  geom_point(
+    data = summary_data %>% dplyr::filter(specific == "General policy"),
+    aes(shape = mitig_adap),
+    size = 6
+  ) +
+  geom_errorbar(
+    data = summary_data %>% dplyr::filter(specific == "General policy"),
+    aes(ymin = lower_ci, ymax = upper_ci),
+    width = 0.1
+  ) +
+  geom_errorbar(
+    data = summary_data %>% dplyr::filter(specific == "Specific policy"),
+    aes(ymin = lower_ci, ymax = upper_ci),
+    width = 0.1
+  ) +
+  geom_hline(yintercept = 4, linetype = "dashed", colour = "grey40") +
+  scale_y_continuous(
+    limits = c(1, 7), breaks = 1:7,
+    labels = c("1: Strongly\nopposed","2","3","4: Neutral","5","6","7: Strongly\nin favour")
+  ) +
+  scale_x_discrete(limits = rev) +
+  scale_shape_manual(values = c(17, 16), name = "Policy Type") +
+  scale_color_manual(
+    values = policy_colors,
+    name = "Policy",
+    breaks = c(
+      "General mitigation","General adaptation",
+      "Tax fossil fuel profits","Mandatory insulation","Tax flights",
+      "Resilience investment","Building restrictions"
+    )
+  ) +
+  labs(title = "", x = "Country", y = "Average Support") +
+  coord_flip() +
+  theme_minimal() +
+  theme(
+    legend.box = "vertical",
+    legend.position = "bottom",
+    legend.text = element_text(size = 11),
+
+    axis.text.x = element_text(size = 11),
+    axis.text.y = element_text(size = 12),
+    axis.title.x.bottom = element_text(size = 11),
+    axis.title.y.left = element_blank(),
+
+    # if you ever facet this plot later, these match your imp_p style:
+    strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    )
+  ) +
+  guides(
+    color = guide_legend(
+      nrow = 1,
+      override.aes = list(shape = c(17, 16, 17, 17, 17, 16, 16))
+    ),
+    shape = guide_legend(nrow = 1)
+  )
+cntry_supp
+
+ggsave('figures_r1/final/alessio/Fig2A_WEIGHTED_alessio.png',width=14,height=10)
+  
+```
+
+```{r Fig2B}
+
+# Filter and prepare data with weights
+impact_long <- full_rec %>%
+  filter(imp_exp_pol_assign %in% c('Building restrictions','Resilience investment',
+                                    'Mandatory insulation','Tax fossil fuel profits',
+                                    "Tax flights")) %>% 
+  pivot_longer(
+    cols = c(imp_exp_wb, imp_exp_econ, imp_exp_fin, imp_exp_goal),
+    names_to = "impact_category",
+    values_to = "score"
+  ) %>%
+  filter(!is.na(score))  # Remove missing values
+
+# Create survey design
+impact_design <- svydesign(ids = ~1, weights = ~weights, data = impact_long)
+
+policy_levels <- c("Mandatory insulation","Tax fossil fuel profits",
+                    "Resilience investment","Building restrictions",
+                    "Tax flights")
+
+# Calculate weighted summary statistics
+impact_by_policy <- svyby(
+  ~score, 
+  ~imp_exp_pol_assign + impact_category, 
+  design = impact_design, 
+  FUN = svymean, 
+  na.rm = TRUE,
+  vartype = c("se", "ci")
+) %>%
+  rename(
+    mean = score,
+    se = se,
+    ci_lower = ci_l,
+    ci_upper = ci_u
+  ) %>%
+  mutate(
+    imp_exp_pol_assign = factor(imp_exp_pol_assign, levels = policy_levels),
+    mitig_adap = ifelse(imp_exp_pol_assign %in% c("Resilience investment","Building restrictions"), 1, 0),
+    mitig_adap = factor(mitig_adap, levels = c(0,1), labels = c('Mitigation','Adaptation')),
+    impact_category = factor(impact_category, levels = rev(c('imp_exp_wb','imp_exp_goal',
+                                                              'imp_exp_fin','imp_exp_econ',
+                                                              'fair_lowinc','fair_mdlcls'))),
+    factor_group = ifelse(impact_category %in% c('imp_exp_wb','imp_exp_goal'), 1, 0),
+    factor_group = factor(factor_group, levels = c(1,0), labels = c('Benefits','Costs'))
+  )
+
+# Rest of your plotting code stays the same
+imp_p <- ggplot(impact_by_policy, aes(x = impact_category, y = mean, 
+                                       color = imp_exp_pol_assign,
+                                       shape = mitig_adap, group = factor_group)) +
+  geom_point(size = 4) +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), width = 0.05) +
+  scale_x_discrete(labels = impact_labels) +
+  scale_y_continuous(limits = c(1, 7), breaks = 1:7,
+                     labels = c('1: Very\nnegatively','2','3','4: No impact',
+                               '5','6','7: Very\npositively')) +
+  scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c('Tax fossil fuel profits',
+                               'Mandatory insulation',
+                               'Tax flights',
+                               'Resilience investment',
+                               'Building restrictions')) +
+  facet_grid(
+    rows = vars(factor_group),
+    scales = "free_y",
+    space = "free_y",
+    switch = "y",
+    labeller = labeller(group = label_wrap_gen(width = 17))
+  ) +
+  labs(
+    title = "",
+    x = "",
+    y = "Average Impact Perception",
+    color = "Policy"
+  ) +
+  scale_shape_manual(values = c(17, 16),
+                     name = "Policy Type") +
+  theme_minimal() +
+  theme(
+    legend.box = "vertical",
+    legend.position = "bottom",
+    legend.text = element_text(size=11),
+    axis.text.x = element_text(size=11),
+    axis.text.y = element_text(size=11),
+    strip.placement = "outside",
+    strip.text.y.left = element_text(
+  angle = 90,
+  hjust = 0.5,
+  vjust = 0.5,
+  size = 12,
+  face = "bold",
+  margin = margin(2, 2, 2, 2)
+),
+    panel.spacing.y = unit(1, "lines"),
+   strip.background.y = element_rect(
+  fill = NA,
+  colour = "grey75",
+  linewidth = 0.4
+)
+  ) +
+  guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17, 16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)+
+  geom_hline(yintercept = 4, linetype = 'dashed', color = 'grey40') +
+  coord_flip()
+
+imp_p
+ggsave('figures_r1/final/alessio/Fig2B_WEIGHTED_alessio.png',width=12,height=6)
+
+
+
+ggpubr::ggarrange(
+  cntry_supp,
+  imp_p,
+  labels = c("A", "B"),
+  nrow = 2,        # <- FORCE rows
+  ncol = 1,
+  common.legend = TRUE,
+  legend = "bottom"
+)
+
+ggsave('figures_r1/final/alessio/Fig2AB_WEIGHTED_alessio.png',width=14,height=8)
+
+```
+
+```{r sim_coeffs_prep_packages}
+
+# Define which packages needed for analyses
+p_needed <-
+  c("knitr",
+    "dplyr", 
+    "stargazer",
+    "ggplot2",
+    "viridis",
+    "haven",
+    "MASS",
+    "modelsummary",
+    "tidyr",
+    "data.table",
+    "scales",
+    'arm')
+
+# Check which packages are already installed on your computer
+packages <- rownames(installed.packages())
+
+# Check which packages are not installed
+p_to_install <- p_needed[!(p_needed %in% packages)]
+
+if (length(p_to_install) > 0) {
+  install.packages(p_to_install)
+}
+sapply(p_needed, require, character.only = TRUE)
+
+```
+
+```{r sim_function}
+#-------------------------------------------------------------------------------
+# Simulation function
+#-------------------------------------------------------------------------------
+
+simulate_expected_change_std <- function(varname, model, sims, data, weights_var = "weights") {
+  
+  # Build baseline
+  base <- data %>% 
+    summarise(across(
+      -weights_var, 
+      ~ {
+        if (is.numeric(.)) {
+          weighted.mean(., w = data[[weights_var]], na.rm = TRUE)
+        } else if (is.factor(.) || is.character(.)) {
+          tbl <- tapply(data[[weights_var]], ., sum, na.rm = TRUE)
+          modal_value <- names(which.max(tbl))
+          if (is.factor(.)) {
+            factor(modal_value, levels = levels(.))
+          } else {
+            modal_value
+          }
+        } else {
+          mean(., na.rm = TRUE)
+        }
+      }
+    )) 
+  
+  # Determine min/max values
+  if (is.factor(data[[varname]]) || is.character(data[[varname]])) {
+    var_levels <- levels(factor(data[[varname]]))
+    if (length(var_levels) < 2) return(NULL)
+    
+    min_val <- var_levels[1]
+    max_val <- var_levels[length(var_levels)]
+    
+  } else {
+    # For standardized variables, use -1 SD to +1 SD (or quartiles if you prefer)
+    # Option A: -1 SD to +1 SD
+    min_val <- -1
+    max_val <- 1
+    
+    # Option B: Still use weighted quartiles (works for standardized too)
+    # min_val <- weightedQuantile(data[[varname]], w = data[[weights_var]], 
+    #                             probs = 0.25, na.rm = TRUE)
+    # max_val <- weightedQuantile(data[[varname]], w = data[[weights_var]], 
+    #                             probs = 0.75, na.rm = TRUE)
+  }
+  
+  # Create min and max scenarios
+  x_min <- base
+  x_max <- base
+  x_min[[varname]] <- min_val
+  x_max[[varname]] <- max_val
+  
+  # Ensure factor levels match
+  for (col in names(base)) {
+    if (is.factor(data[[col]])) {
+      x_min[[col]] <- factor(x_min[[col]], levels = levels(data[[col]]))
+      x_max[[col]] <- factor(x_max[[col]], levels = levels(data[[col]]))
+    }
+  }
+  
+  # Predictions
+  tryCatch({
+    X_min <- model.matrix(delete.response(terms(model)), data = x_min)
+    X_max <- model.matrix(delete.response(terms(model)), data = x_max)
+    
+    expected_min <- X_min %*% t(sims$coef)
+    expected_max <- X_max %*% t(sims$coef)
+    
+    diffs <- as.vector(expected_max - expected_min)
+    
+    tibble(
+      variable = varname,
+      mean_diff = mean(diffs),
+      lower_95 = quantile(diffs, 0.025),
+      upper_95 = quantile(diffs, 0.975)
+    )
+  }, error = function(e) {
+    warning(paste("Error processing", varname, ":", e$message))
+    return(NULL)
+  })
+}
+
+
+```
+
+```{r sim_run}
+
+#-------------------------------------------------------------------------------
+# Subset the data (mitig vs adap, all rel preds)
+#-------------------------------------------------------------------------------
+
+# preds_overall = c("gen_trust_cnty", "gen_trust_EU", 
+#           "poli_ori", 
+#           "clim_worry",
+#           "val_bio1",
+#           "female", "quota_age", "rural",'hh_inc',"quota_group_educ"
+#           ) 
+# 
+# 
+# 
+# preds = c("gen_trust_cnty", "gen_trust_EU", 
+#           "poli_ori", 
+#           "clim_worry",
+#           "val_bio1",
+#           "imp_exp_wb","imp_exp_goal","imp_exp_econ","imp_exp_fin",
+#           "female", "quota_age", "rural",'hh_inc',"quota_group_educ"
+#           ) 
+
+preds_overall_z = c("gen_trust_cnty_z", "gen_trust_EU_z", 
+          "poli_ori_z", 
+          "clim_worry_z",
+          "val_bio1_z",
+          "female", "quota_age", "rural",'hh_inc_z',"quota_group_educ"
+          ) 
+
+preds_z = c("gen_trust_cnty_z", "gen_trust_EU_z", 
+          "poli_ori_z", 
+          "clim_worry_z",
+          "val_bio1_z",
+          "imp_exp_wb_z","imp_exp_goal_z","imp_exp_econ_z","imp_exp_fin_z",
+          "female", "quota_age", "rural",'hh_inc_z',"quota_group_educ"
+          ) 
+
+#-------------------------------------------------------------------------------
+# Fit the models - BE SURE TO USE STANDARDISED DATA AND VARIABLES
+#-------------------------------------------------------------------------------
+
+## gen mitig
+sub = wave2_std
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_genmtgn <- svyglm(reformulate(preds_overall_z, response = "gen_sup_mtgn"),
+                    design = survey_design,
+                    family = gaussian(),  
+             data = sub)
+
+car::vif(m_genmtgn)
+summary(m_genmtgn)
+
+## gen adaptation
+m_genadpn <- svyglm(reformulate(preds_overall_z, response = "gen_sup_adpn"),
+                   design = survey_design,
+                    family = gaussian(),  #
+             data = sub)
+
+car::vif(m_genadpn)
+
+## CNTY_pol_insu
+sub = wave1_std %>% filter(imp_exp_pol_assign == "Mandatory insulation")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_insu <- svyglm(reformulate(preds_z, response = "CNTY_pol_insu"),
+             design = survey_design,
+             family = gaussian(),  
+             data = sub
+             )  
+car::vif(m_insu)
+summary(m_insu)
+
+## CNTY_pol_taxff
+sub = wave1_std  %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_taxff <- svyglm(reformulate(preds_z, response = "CNTY_pol_taxff"),
+                  design = survey_design,
+                  family = gaussian(), 
+                  data = sub
+             )
+## CNTY_pol_taxfly
+sub = wave1_std %>% filter(imp_exp_pol_assign == "Tax flights")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_taxfly <- svyglm(reformulate(preds_z, response = "CNTY_pol_taxfly"),
+             design = survey_design,
+             family = gaussian(), 
+             data = sub
+             )
+
+## EU_pol_waterconserve
+sub = wave2_std %>% filter(imp_exp_pol_assign == "Resilience investment")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_waterconserve <- svyglm(reformulate(preds_z, response = "EU_pol_waterconserve"),
+             design = survey_design,
+             family = gaussian(), 
+             data = sub
+             )
+car::vif(m_waterconserve)
+
+## EU_pol_build
+sub = wave2_std   %>% filter(imp_exp_pol_assign == "Building restrictions")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_build <- svyglm(reformulate(preds_z, response = "EU_pol_build"),
+            design = survey_design,
+            family = gaussian(),  
+            data = sub
+             )
+car::vif(m_build)
+
+#-------------------------------------------------------------------------------
+# Simulate coefficients (one for each model)
+#-------------------------------------------------------------------------------
+# Extract simulations from the weighted model
+library(arm) 
+set.seed(123)
+
+# Function to simulate coefficients from svyglm
+sim_svyglm <- function(model, n.sims = 1000) {
+  # Extract coefficients and variance-covariance matrix
+  beta_hat <- coef(model)
+  V <- vcov(model)
+  
+  # Simulate from multivariate normal
+  library(MASS)
+  beta_sims <- mvrnorm(n.sims, mu = beta_hat, Sigma = V)
+  
+  # Return in a format similar to sim() output
+  list(
+    coef = beta_sims,
+    sigma = summary(model)$dispersion  # For reference
+  )
+}
+
+## genmtgn
+sims_genmtgn <- sim_svyglm(m_genmtgn, n.sims = 1000)
+#betas_genmtgn <- coef(sims_genmtgn)  # matrix: rows = sims, columns = coefficients
+
+## genadpn
+sims_genadpn <- sim_svyglm(m_genadpn, n.sims = 1000)
+#betas_genadpn <- coef(sims_genadpn) 
+
+## insu
+sims_insu <- sim_svyglm(m_insu, n.sims = 1000)
+#betas_insu <- coef(sims_insu) 
+
+## taxff
+sims_taxff <- sim_svyglm(m_taxff, n.sims = 1000)
+#betas_taxff <- coef(sims_taxff) 
+
+## taxfly
+sims_taxfly <- sim_svyglm(m_taxfly, n.sims = 1000)
+#betas_taxfly <- coef(sims_taxfly) 
+
+## waterconserve
+sims_waterconserve <- sim_svyglm(m_waterconserve, n.sims = 1000)
+#betas_waterconserve <- coef(sims_waterconserve) 
+
+## build
+sims_build <- sim_svyglm(m_build, n.sims = 1000)
+#betas_build <- coef(sims_build) 
+
+#-------------------------------------------------------------------------------
+# Apply
+#-------------------------------------------------------------------------------
+
+# For troubleshooting 
+# for (var in preds_overall) {
+#   cat("Testing:", var, "\n")
+#   print(table(full_rec[[var]], useNA = "ifany"))
+#   tryCatch({
+#     result <- simulate_expected_change_unst(var, m_genmtgn, sims_genmtgn, full_rec, weights_var = "weights")
+#     print(result)
+#   }, error = function(e) {
+#     cat("ERROR:", e$message, "\n\n")
+#   })
+# }
+
+
+# genmtgn
+EV_genmtgn <- map_dfr(preds_overall_z, ~simulate_expected_change_std(.x, m_genmtgn, sims_genmtgn, wave2_std %>% dplyr::select(all_of(preds_overall_z),weights,gen_sup_mtgn)),weights_var = 'weights')
+
+# genadpn
+EV_genadpn <- map_dfr(preds_overall_z, ~simulate_expected_change_std(.x, m_genadpn, sims_genadpn, wave2_std %>% dplyr::select(all_of(preds_overall_z),weights,gen_sup_adpn)),weights_var = 'weights')
+
+# insu
+EV_insu <- map_dfr(preds_z, ~simulate_expected_change_std(.x, m_insu, sims_insu, wave1_std 
+             %>% filter(imp_exp_pol_assign == "Mandatory insulation")),weights_var='weights')
+
+# taxff
+EV_taxff <- map_dfr(preds_z, ~simulate_expected_change_std(.x, m_taxff, sims_taxff, wave1_std 
+             %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits")),weights_var='weights')
+
+# taxfly
+EV_taxfly <- map_dfr(preds_z, ~simulate_expected_change_std(.x, m_taxfly, sims_taxfly, wave1_std 
+             %>% filter(imp_exp_pol_assign == "Tax flights")),weights_var='weights')
+
+# waterconserve
+EV_waterconserve <- map_dfr(preds_z, ~simulate_expected_change_std(.x, m_waterconserve, sims_waterconserve, wave2_std 
+             %>% filter(imp_exp_pol_assign == "Resilience investment")),weights_var='weights')
+
+# build 
+EV_build <- map_dfr(preds_z, ~simulate_expected_change_std(.x, m_build, sims_build, wave2_std 
+             %>% filter(imp_exp_pol_assign == "Building restrictions")),weights_var='weights')
+
+
+## combine
+EV_genmtgn    <- EV_genmtgn    %>% mutate(policy = "General mitigation")
+EV_genadpn   <- EV_genadpn   %>% mutate(policy = "General adaptation")
+EV_insu <- EV_insu %>% mutate(policy = "Mandatory insulation")
+EV_taxff <- EV_taxff %>% mutate(policy = "Tax fossil fuel profits")
+EV_taxfly <- EV_taxfly %>% mutate(policy = "Tax flights")
+EV_waterconserve <- EV_waterconserve %>% mutate(policy = "Resilience investment")
+EV_build <- EV_build %>% mutate(policy = "Building restrictions")
+
+```
+
+```{r fIG1C_FIG3}
+#-------------------------------------------------------------------------------
+# Prep plot
+#-------------------------------------------------------------------------------
+term_levels <- c(
+  "Trust, country","Trust, EU",
+  "Political orientation", 
+  "Climate worry",# 
+  "Biospheric value",
+   "Well-being","Effectiveness","National\neconomy","Household\nfinances",
+  "Female","Age","Education","Rural","Household\nIncome"
+)
+
+group_levels <- c("Socio-demographics",
+                 'Policy Evaluations',
+                  "Attitudes"
+                  )
+
+policy_levels <- c("General mitigation", "General adaptation",
+                   "Mandatory insulation","Tax fossil fuel profits",
+                   "Tax flights",
+                    "Resilience investment","Building restrictions")#
+
+## FOR PLOTTING THE OVERALL OBJECTIVES 
+all_effects_overall <- bind_rows(EV_genmtgn, EV_genadpn)
+
+all_effects_overall <- all_effects_overall %>%
+  mutate(
+    term_label = case_match(
+      variable,
+      "gen_trust_cnty_z" ~ "Trust, country",
+      "gen_trust_EU_z" ~ "Trust, EU",
+      "poli_ori_z" ~ "Political orientation",
+      "clim_worry_z" ~ "Climate worry",
+      "val_bio1_z" ~ "Biospheric value",
+      "female" ~ "Female",
+      "quota_age" ~ "Age",
+      "quota_group_educ" ~ "Education",
+      "rural" ~ "Rural",
+      "hh_inc_z" ~ "Household Income",
+      .default = variable
+    ),
+    group = case_match(
+      variable,
+      "gen_trust_cnty_z" ~ "Attitudes",
+      "gen_trust_EU_z" ~ "Attitudes",
+      "poli_ori_z" ~ "Attitudes",
+      "clim_worry_z" ~ "Attitudes",
+      "val_bio1_z" ~ "Attitudes",
+      "female" ~ "Socio-demographics",
+      "quota_age" ~ "Socio-demographics",
+      "quota_group_educ" ~ "Socio-demographics",
+       "rural" ~ "Socio-demographics",
+      "hh_inc_z" ~ "Socio-demographics",
+      .default = variable
+    ),
+    term_label = factor(term_label, levels = term_levels),
+    group = factor(group, levels = rev(group_levels)),
+    mitig_adap = ifelse(policy %in% c('Building restrictions','Resilience investment','General adaptation'),1,0),
+    mitig_adap = factor(mitig_adap,levels=c(0,1),labels=c('Mitigation','Adaptation')),
+    policy = factor(policy, levels = policy_levels),
+    policy_plot = factor(policy, levels = rev(policy_levels))
+  )
+
+## FOR PLOTTING THE INDIVIDUAL POLICIES 
+all_effects_individual <- bind_rows(EV_insu, EV_taxff,EV_waterconserve,EV_build, EV_taxfly)
+all_effects_individual <- all_effects_individual %>%
+  mutate(
+    term_label = case_match(
+      variable,
+      "gen_trust_cnty_z" ~ "Trust, country",
+      "gen_trust_EU_z" ~ "Trust, EU",
+      "poli_ori_z" ~ "Political orientation",
+      "clim_worry_z" ~ "Climate worry",
+      "val_bio1_z" ~ "Biospheric value",
+       "imp_exp_fin_z"~"Household\nfinances",
+       "imp_exp_econ_z"~"National\neconomy",
+       "imp_exp_goal_z"~"Effectiveness",
+       "imp_exp_wb_z"~"Well-being",
+      "female" ~ "Female",
+      "quota_age" ~ "Age",
+      "quota_group_educ" ~ "Education",
+      "rural" ~ "Rural",
+      "hh_inc_z" ~ "Household\nIncome",
+      .default = variable
+    ),
+    group = case_match(
+      variable,
+      "gen_trust_cnty_z" ~ "Attitudes",
+      "gen_trust_EU_z" ~ "Attitudes",
+      "poli_ori_z" ~ "Attitudes",
+      "clim_worry_z" ~ "Attitudes",
+      "val_bio1_z" ~ "Attitudes",
+      "imp_exp_fin_z"~"Policy Evaluations",
+      "imp_exp_econ_z"~"Policy Evaluations",
+      "imp_exp_goal_z"~"Policy Evaluations",
+      "imp_exp_wb_z"~"Policy Evaluations",
+      "female" ~ "Socio-demographics",
+      "quota_age" ~ "Socio-demographics",
+      "quota_group_educ" ~ "Socio-demographics",
+       "rural" ~ "Socio-demographics",
+      "hh_inc_z" ~ "Socio-demographics",
+      .default = variable
+    ),
+    term_label = factor(term_label, levels = term_levels),
+    group = factor(group, levels = rev(group_levels)),
+    mitig_adap = ifelse(policy %in% c('Building restrictions','Resilience investment','General adaptation'),1,0),
+    mitig_adap = factor(mitig_adap,levels=c(0,1),labels=c('Mitigation','Adaptation')),
+    policy = factor(policy, levels = policy_levels),
+    policy_plot = factor(policy, levels = rev(policy_levels))
+  )
+
+#-------------------------------------------------------------------------------
+# Plot
+#-------------------------------------------------------------------------------
+
+# FIG 1C: POLICY OBJECTIVES 
+overall <- ggplot(all_effects_overall %>% drop_na(any_of('term_label')),
+       aes(x = mean_diff, y = term_label,shape = mitig_adap,
+           colour = policy, group = policy_plot)) +
+  geom_point(position = position_dodge(width = 0.6), size = 3.75) +
+  geom_errorbar(aes(xmin = lower_95, xmax = upper_95),
+                position = position_dodge(width = 0.6), width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  facet_grid(
+    rows   = vars(group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  labs(x = "Expected change in support", y = NULL, colour = "Policy") + # +/- 1 SD
+  scale_x_continuous(limits = c(-1.3, 1.3)) +
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+  scale_colour_manual(values=c("General mitigation" = "#9E3D22", "General adaptation" = "#2B5C8A")) + # "#FECEA3", #C4D8F3
+  #scale_colour_manual(values = city_colors) +
+  theme_standard() +
+  theme(
+    legend.position='bottom',
+    strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    )
+  )+
+  #guides(colour = guide_legend(nrow=1))
+  guides(
+    color = guide_legend(
+      nrow = 1,
+      override.aes = list(
+        shape = c(17, 16)  # Match order of breaks
+      )
+    ),
+    shape = 'none'
+  )
+
+overall
+ggsave('figures_r1/final/alessio/Fig1C_STD_WEIGHTED_alessio.png',height=8, width=8)
+
+# FINALISE FIGURE 1 
+fig1ABC <- ggarrange(fig1AB,overall,labels=c('','C'),ncol=2)
+fig1ABC
+ggsave('figures_r1/final/alessio/fig1ABC_STD_WEIGHTED_alessio.png',height=8,width=12)# ,height=8,width=10
+
+
+# FIG 3
+ind <- ggplot(all_effects_individual  %>% drop_na(any_of('term_label')),
+       aes(x = mean_diff, y = term_label,shape=mitig_adap,
+           colour = policy, group = policy_plot)) +
+  geom_point(position = position_dodge(width = 0.6), size = 3.75) +
+  geom_errorbar(aes(xmin = lower_95, xmax = upper_95),
+                position = position_dodge(width = 0.6), width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+   scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+   scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c(       'Tax fossil fuel profits',
+                                        'Mandatory insulation',
+                                        'Tax beef',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions'))+
+  facet_grid(
+    rows   = vars(group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  scale_x_continuous(limits = c(-.75, 1.5)) +
+  #scale_colour_manual(values = city_colors) +
+  theme_standard() +
+  theme(
+    legend.position='bottom',
+strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    )
+  )+
+  #guides(colour = guide_legend(nrow=1))
+  labs(x = "Expected change in support", y = NULL) + # +/- 1 SD make 1 SD for standardised version 
+
+  guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17, 16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+
+ind
+ggsave('figures_r1/final/alessio/Fig3_ALL_NUM_STD_WEIGHTED_alessio.png',height=8, width=14)
+
+```
+
+```{r alternative indi plot}
+
+attitudes_effs <- all_effects_individual %>% 
+  drop_na(any_of('term_label')) %>% 
+  filter(variable %in% c('val_bio1_z','clim_worry_z','poli_ori_z','gen_trust_cnty_z','gen_trust_EU_z'))
+  
+
+# create alternating bands
+bands <- data.frame(
+  ymin = seq(0.5, length(unique(attitudes_effs$term_label)) - 0.5, by = 1),
+  ymax = seq(1.5, length(unique(attitudes_effs$term_label)) + 0.5, by = 1),
+  fill = rep(c("grey90", "white"), length.out = length(unique(attitudes_effs$term_label)))
+)
+
+# FIG 3_atts -- need to plot separately and then combine 
+ind_atts <- ggplot(attitudes_effs,
+  #all_effects_individual %>% drop_na(any_of('term_label')) %>% filter(variable %in% c('val_bio1_z','clim_worry_z','poli_ori_z','gen_trust_cntry_z','gen_trust_E_z')),
+       aes(x = mean_diff, y = term_label,shape=mitig_adap,
+           colour = policy, group = policy_plot)) +
+  geom_rect(data = bands, aes(ymin = ymin, ymax = ymax, fill = fill),
+            xmin = -Inf, xmax = Inf, alpha = 0.5, inherit.aes = FALSE) +
+  scale_fill_identity() +
+  geom_point(position = position_dodge(width = .7), size = 3.75) +
+  geom_errorbar(aes(xmin = lower_95, xmax = upper_95),
+                position = position_dodge(width = .7), width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+  scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c("Tax fossil fuel profits","Mandatory insulation","Tax flights",
+      "Resilience investment","Building restrictions"))+
+  
+  facet_grid(
+    rows   = vars(group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  scale_x_continuous(limits = c(-.75, 1.5)) +
+ 
+  theme_standard() +
+  theme(
+   #panel.spacing.y = unit(2, "lines"),
+    panel.grid.major.y = element_line(linewidth = 1),
+    legend.position='bottom',
+strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ),
+axis.text.y = element_text(size=12)
+  )+
+  #guides(colour = guide_legend(nrow=1))
+  labs(x = "", y = NULL) + # Expected change in support +/- 1 SD make 1 SD for standardised version 
+
+  guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17,16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+ind_atts
+
+imp_effs <- all_effects_individual %>% 
+  drop_na(any_of('term_label')) %>% 
+  filter(variable %in% c('imp_exp_wb_z','imp_exp_goal_z','imp_exp_econ_z','imp_exp_fin_z'))
+  
+# create alternating bands
+bands <- data.frame(
+  ymin = seq(0.5, length(unique(imp_effs$term_label)) - 0.5, by = 1),
+  ymax = seq(1.5, length(unique(imp_effs$term_label)) + 0.5, by = 1),
+  fill = rep(c("grey90", "white"), length.out = length(unique(imp_effs$term_label)))
+)
+
+# FIG 3_atts -- need to plot separately and then combine 
+ind_imps <- ggplot(imp_effs,
+  #all_effects_individual %>% drop_na(any_of('term_label')) %>% filter(variable %in% c('val_bio1_z','clim_worry_z','poli_ori_z','gen_trust_cntry_z','gen_trust_E_z')),
+       aes(x = mean_diff, y = term_label,shape=mitig_adap,
+           colour = policy, group = policy_plot)) +
+  geom_rect(data = bands, aes(ymin = ymin, ymax = ymax, fill = fill),
+            xmin = -Inf, xmax = Inf, alpha = 0.5, inherit.aes = FALSE) +
+  scale_fill_identity() +
+  geom_point(position = position_dodge(width = .7), size = 3.75) +
+  geom_errorbar(aes(xmin = lower_95, xmax = upper_95),
+                position = position_dodge(width = .7), width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+  scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c("Tax fossil fuel profits","Mandatory insulation","Tax flights",
+      "Resilience investment","Building restrictions"))+
+  
+  facet_grid(
+    rows   = vars(group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 20))) +
+  scale_x_continuous(limits = c(-.75, 1.5)) +
+ 
+  theme_standard() +
+  theme(
+   #panel.spacing.y = unit(2, "lines"),
+    panel.grid.major.y = element_line(linewidth = 1),
+    legend.position='bottom',
+strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ),
+axis.text.y = element_text(size=12)
+  )+
+  #guides(colour = guide_legend(nrow=1))
+  labs(x = "", y = NULL) + # Expected change in support +/- 1 SD make 1 SD for standardised version 
+
+  guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17,16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+ind_imps
+
+
+socdem_effs <- all_effects_individual %>%  
+  drop_na(any_of('term_label')) %>% 
+  filter(variable %in% c('female','quota_age','rural','hh_inc_z','quota_group_educ'))
+  
+# create alternating bands
+bands <- data.frame(
+  ymin = seq(0.5, length(unique(socdem_effs$term_label)) - 0.5, by = 1),
+  ymax = seq(1.5, length(unique(socdem_effs$term_label)) + 0.5, by = 1),
+  fill = rep(c("grey90", "white"), length.out = length(unique(socdem_effs$term_label)))
+)
+
+# FIG 3_atts -- need to plot separately and then combine 
+socdem_imps <- ggplot(socdem_effs,
+  #all_effects_individual %>% drop_na(any_of('term_label')) %>% filter(variable %in% c('val_bio1_z','clim_worry_z','poli_ori_z','gen_trust_cntry_z','gen_trust_E_z')),
+       aes(x = mean_diff, y = term_label,shape=mitig_adap,
+           colour = policy, group = policy_plot)) +
+  geom_rect(data = bands, aes(ymin = ymin, ymax = ymax, fill = fill),
+            xmin = -Inf, xmax = Inf, alpha = 0.5, inherit.aes = FALSE) +
+  scale_fill_identity() +
+  geom_point(position = position_dodge(width = .7), size = 3.75) +
+  geom_errorbar(aes(xmin = lower_95, xmax = upper_95),
+                position = position_dodge(width = .7), width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+  scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c("Tax fossil fuel profits","Mandatory insulation","Tax flights",
+      "Resilience investment","Building restrictions"))+
+  
+  facet_grid(
+    rows   = vars(group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  scale_x_continuous(limits = c(-.75, 1.5)) +
+ 
+  theme_standard() +
+  theme(
+   #panel.spacing.y = unit(2, "lines"),
+    panel.grid.major.y = element_line(linewidth = 1),
+    legend.position='bottom',
+strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ),
+axis.text.y = element_text(size=12)
+  )+
+  #guides(colour = guide_legend(nrow=1))
+  labs(x = "Expected change in support", y = NULL) + # +/- 1 SD make 1 SD for standardised version 
+
+  guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17,16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+socdem_imps
+
+ggarrange(ind_atts,ind_imps,socdem_imps,nrow=3,common.legend = T, legend='bottom')
+
+ggsave('figures_r1/final/alessio/Fig3_ALL_NUM_STD_WEIGHTED_alessio_separated.png',height = 14, width = 12, dpi = 300)#height=12, width=14)
+
+
+```
+
+```{r relimp_prep}
+
+preds_z_relimp = c(preds_z, c('cntry')) 
+
+# # UNWEIGHTD
+# do_relimp <- function(dat, preds) {
+#   f <- reformulate(preds, response = "pol_all")
+#   m <- lm(f, data = dat)
+#   imp <- calc.relimp(m, type = "lmg", rela = TRUE)
+#   data.frame(variable = names(imp$lmg), lmg_rel = imp$lmg, stringsAsFactors = FALSE)
+# }
+
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = full_rec_std)
+
+# Weighted version 
+do_relimp_weighted <- function(dat, preds) {
+  f <- reformulate(preds, response = "pol_all")
+  m <- svyglm(f, 
+              design = svydesign(ids = ~1, weights = ~weights, data = dat),
+              family = gaussian(),  
+              data = dat)
+  imp <- calc.relimp(m, type = "lmg", rela = TRUE)
+  data.frame(variable = names(imp$lmg), lmg_rel = imp$lmg, stringsAsFactors = FALSE)
+}
+
+```
+
+```{r run_relimp}
+
+results_exc <- full_rec_std %>%
+  filter(!is.na(pol_all)) %>%
+  group_by(imp_exp_pol_assign) %>%
+  group_map(~ do_relimp_weighted(.x, preds_z_relimp) %>% mutate(imp_exp_pol_assign = unique(.x$imp_exp_pol_assign)), .keep = TRUE)
+
+table(full_rec_std$gen_trust_EU_z,useNA = 'always')
+
+# Bind results from limp
+final_tbl_exc <- bind_rows(results_exc)
+View(final_tbl_exc)
+
+final_tbl_exc %>%
+  filter(imp_exp_pol_assign == 'Mandatory insulation') %>% 
+  filter(variable %in% c('imp_exp_wb_z','imp_exp_goal_z')) %>% 
+  summarise(
+    sum = sum(lmg_rel)
+  )
+
+final_tbl_exc %>%
+  filter(imp_exp_pol_assign == 'Tax flights') %>% 
+  filter(variable %in%
+         # c('imp_exp_goal','imp_exp_wb','imp_exp_econ','imp_exp_fin')
+         #c('clim_worry_z','val_bio1_z','poli_ori_z','gen_trust_cnty_z','gen_trust_EU_z')
+          #c('hh_inc_z','quota_group_educ','quota_age','rural','female')
+           c('cntry')
+         ) %>% 
+  summarise(
+    sum = sum(lmg_rel)
+  )
+
+# c('imp_exp_goal','imp_exp_wb','imp_exp_econ','imp_exp_fin')
+```
+
+```{r Fig4}
+# Plot summary of group decompositions 
+
+policy_levels <- c("Mandatory insulation","Tax fossil fuel profits",
+                    "Resilience investment","Building restrictions",
+                   "Tax flights")
+
+## PREP PLOT IMPACTS
+
+df_plot_IMP <- final_tbl_exc %>% 
+  filter(imp_exp_pol_assign %in% policy_levels) %>% 
+  group_by(imp_exp_pol_assign) %>%
+  summarise(
+    " Effectiveness"                  = sum(lmg_rel[variable=="imp_exp_goal_z"]),
+    "Well-being"                      = sum(lmg_rel[variable=="imp_exp_wb_z"]),
+     "Household\nfinances"              = sum(lmg_rel[variable=="imp_exp_fin_z"]),
+    "National\neconomy"                 = sum(lmg_rel[variable=="imp_exp_econ_z"]),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-c(imp_exp_pol_assign), names_to="variable_type", values_to="lmg_rel") %>%
+  mutate(
+    variable_label_html = case_when(
+      variable_type %in% c("Well-being", "Effectiveness") ~ paste0("",variable_type),
+      variable_type %in% c("National economy", "Household finances") ~ paste0("", variable_type), 
+      # Everything else as-is
+      TRUE ~ variable_type
+    ),
+    variable_label_html = factor(
+      variable_label_html,
+      levels = rev(c(
+        ' Effectiveness',
+        'Well-being',
+        'Household\nfinances' ,
+        'National\neconomy'
+      ))
+    ),
+    mitig_adap = ifelse(imp_exp_pol_assign %in% c('Resilience investment','Building restrictions'),1,0),
+    mitig_adap = factor(mitig_adap, levels = c(0,1),labels = c('Mitigation','Adaptation')),
+    imp_exp_pol_assign = factor(imp_exp_pol_assign,levels=policy_levels),
+    factor_group = 'Policy Evaluations',
+    factor_group = factor(factor_group)
+  )
+
+## PLOT IMPACTS
+shap_imp <- ggplot(df_plot_IMP,
+            aes(x = lmg_rel, y = variable_label_html,shape=mitig_adap,
+                color = imp_exp_pol_assign, group = factor_group)) + # mitig_adap
+  geom_point(position = position_dodge(width = 0), size = 4) +
+  #scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(limits = c(0, .35),labels = scales::percent_format(accuracy = 1))+
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+   scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c(       'Tax fossil fuel profits',
+                                        'Mandatory insulation',
+                                        #'Tax beef',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions'))+
+  facet_grid(
+    rows   = vars(factor_group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  labs(
+    x = "", # Percent of Explained Variance
+    y = '',
+    title = "" #color = guide_legend(title = NULL)
+  ) +
+  theme_standard()+
+  theme(
+    legend.position='none',
+    strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ),
+    axis.text.y = element_text(size=11),
+    axis.title.x = element_text(size=10)
+    
+  ) + guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17, 16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+
+shap_imp
+ggsave('figures_r1/final/alessio/Fig4A_FULL_NUM_STD_WEIGHTED_alessio.png',plot=shap_imp,height=5, width=13)
+
+
+# PREP PLOT ATTITUDES
+df_plot_SEP <- final_tbl_exc %>%
+   filter(imp_exp_pol_assign %in% policy_levels) %>% 
+  group_by(imp_exp_pol_assign) %>%
+  summarise(
+    "Biospheric\nvalue"                  = sum(lmg_rel[variable %in% c("val_bio1_z")]),
+    `Climate worry`                  = sum(lmg_rel[variable %in% c("clim_worry_z")]),
+    "Political\norientation" = sum(lmg_rel[variable %in% c("poli_ori_z")]),
+    `Trust, EU` = sum(lmg_rel[variable %in% c("gen_trust_EU_z")]),
+    `Trust, country` = sum(lmg_rel[variable %in% c("gen_trust_cnty_z")]),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-c(imp_exp_pol_assign), names_to="variable_type", values_to="lmg_rel") %>%
+  mutate(
+        variable_label_html = factor(
+      variable_type,
+      levels = rev(c(
+        "Biospheric\nvalue",
+        "Climate worry",
+        "Political\norientation",
+        "Trust, EU",
+        "Trust, country"
+      ))
+    ),
+    mitig_adap = ifelse(imp_exp_pol_assign %in% c('Resilience investment','Building restrictions'),1,0),
+    mitig_adap = factor(mitig_adap, levels = c(0,1),labels = c('Mitigation','Adaptation')),
+    imp_exp_pol_assign = factor(imp_exp_pol_assign,levels=policy_levels),
+    factor_group = 'Attitudes',
+    factor_group = factor(factor_group)
+  )
+
+# PLOT ATTITUDES
+shap_attitudes <- ggplot(df_plot_SEP,
+            aes(x = lmg_rel, y = variable_label_html,shape=mitig_adap,
+                color = imp_exp_pol_assign,group=factor_group)) + # mitig_adap
+  geom_point(position = position_dodge(width = 0), size = 4) +
+  #scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(limits = c(0, .35),labels = scales::percent_format(accuracy = 1))+
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+   scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c(       'Tax fossil fuel profits',
+                                        'Mandatory insulation',
+                                        #'Tax beef',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions'))+
+  facet_grid(
+    rows   = vars(factor_group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  # guides(color = guide_legend(title = 'Policy')) + 
+  labs(
+    x = "",#Percent of Explained Variance
+    y = '',
+    title = "" #color = guide_legend(title = NULL)
+  ) +
+  theme_standard()+
+  theme(
+    #legend.position       = "bottom",
+    legend.position='none',
+strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ),
+    axis.text.y = element_text(size=11),
+    axis.title.x = element_text(size=10)
+    
+  ) + guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17, 16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+
+shap_attitudes 
+ggsave('figures_r1/final/alessio/Fig4B_FULL_NUM_STD_WEIGHTED_alessio.png',plot=shap_attitudes,height=5, width=13)
+
+# PREP PLOT SOCIODEMOS 
+df_plot_SOCDEM <- final_tbl_exc %>% 
+   filter(imp_exp_pol_assign %in% policy_levels) %>% 
+  group_by(imp_exp_pol_assign) %>%
+  summarise(
+    "Gender, Age,\nRural, Income,\nEducation"           = sum(lmg_rel[variable %in% c("female","quota_age","rural_urban",'hh_inc_z')]),
+    `Country`                     = sum(lmg_rel[variable=="cntry"]),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-c(imp_exp_pol_assign), names_to="variable_type", values_to="lmg_rel") %>%
+  mutate(
+    variable_label_html = case_when(
+      variable_type %in% c("Benefits: Well-being", "Effectiveness") ~ paste0("",variable_type),
+      variable_type %in% c("Costs: Country Economy", "Costs: Household Finances") ~ paste0("", variable_type), 
+      TRUE ~ variable_type
+    ),
+    variable_label_html = factor(
+      variable_label_html,
+      levels = rev(c(
+        "Gender, Age,\nRural, Income,\nEducation",
+        "Country"
+      ))
+    ),
+    mitig_adap = ifelse(imp_exp_pol_assign %in% c('Resilience investment','Building restrictions'),1,0),
+    mitig_adap = factor(mitig_adap, levels = c(0,1),labels = c('Mitigation','Adaptation')),
+    imp_exp_pol_assign = factor(imp_exp_pol_assign,levels=policy_levels),
+    factor_group = 'Sociodemographics',
+    factor_group = factor(factor_group)
+  )
+
+# PLOT SOCIODEMOS
+shap_socdem <- ggplot(df_plot_SOCDEM,
+            aes(x = lmg_rel, y = variable_label_html,shape=mitig_adap,
+                color = imp_exp_pol_assign, group = factor_group)) + # mitig_adap
+  geom_point(position = position_dodge(width = 0), size = 4) +
+  #scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_x_continuous(limits = c(0, .35),labels = scales::percent_format(accuracy = 1))+
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+   scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c(       'Tax fossil fuel profits',
+                                        'Mandatory insulation',
+                                        #'Tax beef',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions'))+
+  facet_grid(
+    rows   = vars(factor_group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  labs(
+    x = "Percent of Explained Variance",
+    y = '',
+    title = "" #color = guide_legend(title = NULL)
+  ) +
+  theme_standard()+
+  theme(
+    #legend.position       = "bottom",
+    legend.position='bottom',
+strip.placement = "outside",
+    strip.text.y.left = element_text(
+      angle = 90, hjust = 0.5, vjust = 0.5,
+      size = 12, face = "bold",
+      margin = margin(2, 2, 2, 2)
+    ),
+    strip.background.y = element_rect(
+      fill = NA, colour = "grey75", linewidth = 0.4
+    ),
+    axis.text.y = element_text(size=11),
+    axis.title.x = element_text(size=10)
+    
+  ) + guides(
+  color = guide_legend(
+    nrow = 1,
+    override.aes = list(shape = c(17, 17, 17, 16, 16))
+  ),
+  shape = guide_legend(
+    nrow = 1
+  )
+)
+
+shap_socdem
+ggsave('figures_r1/final/alessio/Fig4C_FULL_NUM_STD_WEIGHTED_alessio.png',plot=shap_socdem,height=5, width=13)
+
+# COMBINE COMPONENTS 
+shap_full_sep = ggarrange(shap_attitudes,shap_imp,shap_socdem,nrow=3,common.legend = T, legend='bottom')
+shap_full_sep
+
+ggsave('figures_r1/final/alessio/Fig4ABC_STD_WEIGHTED_alessio.png',plot=shap_full_sep,height=8, width=14)
+
+## Check correlations 
+
+# # Select columns 
+# mitig_only <- full_rec_std %>% filter(imp_exp_pol_assign %in% c('Mandatory insulation','Tax flights', 'Tax fossil fuel profits'))
+# # 
+# adap_only <- full_rec_std %>% filter(! imp_exp_pol_assign %in% c('Mandatory insulation','Tax flights', 'Tax fossil fuel profits'))
+# # 
+# cols_to_correlate_m <- mitig_only[, c("gen_trust_EU", "gen_trust_cnty",'poli_ori_z')]
+# #                                     "imp_exp_goal", "imp_exp_wb",'val_bio1')]
+# # 
+# cols_to_correlate_a <- adap_only[, c("gen_trust_EU", "gen_trust_cnty",'poli_ori_z')]
+# #                                     "imp_exp_goal", "imp_exp_wb",'val_bio1')]
+# # 
+# # # Calculate correlation matrix
+# cor_matrix_m <- cor(cols_to_correlate_m, use = "complete.obs")
+# # 
+# # # View the correlation matrix
+# cor_matrix_m
+
+
+```
+
+```{r regressions}
+
+# use standardised preds overall and standardised preds spec with country 
+# preds_gen = c("gen_trust_cnty", "gen_trust_EU", 
+#           "poli_ori", 
+#           "clim_worry",
+#           "val_bio1",
+#           'cntry',
+#           "female", "quota_age", "rural",'hh_inc',"quota_group_educ"  
+#           ) 
+# 
+# preds_spec = c("gen_trust_cnty", "gen_trust_EU", 
+#           "poli_ori", 
+#           "clim_worry",
+#           "val_bio1",
+#           'cntry',
+#           "imp_exp_wb","imp_exp_goal","imp_exp_econ","imp_exp_fin",
+#           "female", "quota_age", "rural",'hh_inc',"quota_group_educ" 
+#           )
+
+
+table(wave1_std$quota_group_educ)
+table(wave2_std$quota_group_educ)
+preds_z_relimp
+
+preds_overall_z_cntry = c(preds_overall_z,c('cntry'))
+
+sub=full_rec_std %>% filter(wave == 2)
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+gen_mtgn = svyglm(reformulate(preds_overall_z_cntry, response = 'gen_sup_mtgn'),
+              design = survey_design,
+              family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+              data=sub) 
+
+summary(gen_mtgn)
+car::vif(gen_mtgn)
+
+gen_adpn = svyglm(reformulate(preds_overall_z_cntry, response = 'gen_sup_adpn'),
+              design = survey_design,
+              family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+              data=sub) 
+summary(gen_adpn)
+car::vif(gen_adpn)
+
+
+sub=wave1_std %>% filter(imp_exp_pol_assign == "Mandatory insulation")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+mandinsul = svyglm(reformulate(preds_z_relimp, response = 'CNTY_pol_insu'),
+                   design = survey_design,
+              family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                   data=sub
+               ) 
+summary(mandinsul)
+
+sub=wave1_std %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+taxff = svyglm(reformulate(preds_z_relimp, response = 'CNTY_pol_taxff'),
+           design = survey_design,
+            family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+           data=sub
+)
+summary(taxff)
+
+sub=wave1_std %>% filter(imp_exp_pol_assign == "Tax flights")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+taxflight = svyglm(reformulate(preds_z_relimp, response = 'CNTY_pol_taxfly'),
+              design = survey_design,
+              family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+               data=sub
+               ) 
+summary(taxflight)
+
+sub=wave2_std %>% filter(imp_exp_pol_assign == "Building restrictions")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+build = svyglm(reformulate(preds_z_relimp, response = 'EU_pol_build'),
+               design = survey_design,
+              family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+               data=sub
+           ) 
+summary(build)
+
+sub=wave2_std %>% filter(imp_exp_pol_assign == "Resilience investment")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+resil = svyglm(reformulate(preds_z_relimp, response = 'EU_pol_waterconserve'),
+               design = survey_design,
+              family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+               data=sub
+           ) 
+summary(resil)
+
+model <- list(
+  'General mitigation' = gen_mtgn,
+  'General adaptation' = gen_adpn
+  # "Tax fossil fuel profits" = taxff,
+  # "Tax flights" = taxflight,
+  # "Mandatory insulation" = mandinsul,
+  # "Resilience investment" = resil,
+  # "Building restrictions" = build
+)
+
+oldnames = c('imp_exp_wb','imp_exp_econ','imp_exp_fin','imp_exp_goal',
+             'gen_trust_cnty_z','gen_trust_EU_z',
+             'poli_ori_z','clim_worry_z','val_bio1_z','female1','quota_age2','quota_age3','quota_age4','quota_age5', 'rural','hh_inc_z','quota_group_educ2','quota_group_educ3','cntry')
+coeffs = c('Benefits: Well-being','Costs: National economy','Costs: Household finances',
+           'Benefits: Effectiveness',
+           'Trust, Country','Trust, EU','Political orientation','Climate worry',
+           'Biospheric value','Female','30-39 yr','40-49 yr','50-59','60-74 yr','Rural','Household income','Medium education','High education', 'Country')
+
+# Create named vector
+rename_vec <- setNames(coeffs, oldnames)
+
+modelsummary(model,
+             #coef_omit = "^cntry",
+             coeff_omit = rename_vec,
+             estimate  = c(# "{estimate}{stars}",
+             #                "{estimate}{stars}",
+             #                "{estimate}{stars}",
+             #                 "{estimate}{stars}",
+             #                 "{estimate}{stars}"
+                           "{estimate}{stars}",
+                           "{estimate}{stars}"
+                           ),# "{estimate} ({std.error})
+             output = "Overall Policy Regressions Renamed OVERALLSTD WEIGHTED COUNTRIES.docx")
+
+```
+
+```{r descriptive_stats}
+
+country = 'DE'
+#table(w1$cntry)
+sub = w1[w1$cntry==country,]
+table(sub[sub$quota_gndr == 1,]$quota_age)/nrow(sub)*100
+
+
+```
+
+```{r fairness_shap}
+
+preds_all_fair <- c("imp_exp_wb","imp_exp_econ", "imp_exp_fin", "imp_exp_goal",
+                    'fair_lowinc','fair_mdlcls',
+                    "gen_trust_cnty", "gen_trust_EU", 
+                    "poli_ori", 
+                    "clim_worry", "val_bio1",
+                    "female", "quota_age", "quota_group_educ", "rural", 'hh_inc', 'cntry') 
+nrow(w2_rec)
+
+adap_pols = c("Resilience investment","Building restrictions")
+
+# Test VIF for each
+f_fair <- reformulate(preds_all_fair, response = "pol_all")
+m_adap <- lm(f, data = full_rec[full_rec$imp_exp_pol_assign %in% adap_pols,]) # 
+vif_values_adap <- car::vif(m_adap)
+vif_values_adap
+
+# largest vif is 2.19 
+
+do_relimp <- function(dat) {
+  f <- reformulate(preds_all_fair, response = "pol_all")
+  m <- lm(f_fair, data = dat)
+  imp <- calc.relimp(m, type = "lmg", rela = TRUE)
+  data.frame(variable = names(imp$lmg), lmg_rel = imp$lmg, stringsAsFactors = FALSE)
+}
+
+# version just for w2
+results_exc_fair <- full_rec[full_rec$imp_exp_pol_assign %in% adap_pols,] %>%
+  filter(!is.na(pol_all)) %>%
+  group_by(imp_exp_pol_assign) %>%
+  group_map(~ do_relimp(.x) %>% mutate(imp_exp_pol_assign = unique(.x$imp_exp_pol_assign)), .keep = TRUE)
+  #group_map(~ do_relimp(.x), .keep = TRUE)
+
+# Bind results from limp
+final_tbl_exc_fair <- bind_rows(results_exc_fair)
+View(final_tbl_exc_fair)
+
+# Plot 
+df_plot <- final_tbl_exc_fair %>% # final_tbl_exc or final_tbl_all
+  group_by(imp_exp_pol_assign) %>%
+    summarise(
+      #`**Fairness**` = sum(lmg_rel[variable %in% c("fair_lowinc","fair_mdlcls")]),
+    'Low income'            = sum(lmg_rel[variable=="fair_lowinc"]),
+    'Middle class'              = sum(lmg_rel[variable=="fair_mdlcls"]),
+    `Effectiveness`                  = sum(lmg_rel[variable=="imp_exp_goal"]),
+    'Well-being'                      = sum(lmg_rel[variable=="imp_exp_wb"]),
+    'Household finances'              = sum(lmg_rel[variable=="imp_exp_fin"]),
+    'National economy'                 = sum(lmg_rel[variable=="imp_exp_econ"]),
+    `Biospheric value`                  = sum(lmg_rel[variable %in% c("val_bio1")]),
+    `Climate worry`                  = sum(lmg_rel[variable %in% c("clim_worry")]),
+    `Political orientation` = sum(lmg_rel[variable %in% c("poli_ori")]),
+    `Trust, EU` = sum(lmg_rel[variable %in% c("gen_trust_EU")]),
+    `Trust, country` = sum(lmg_rel[variable %in% c("gen_trust_cnty")]),
+     "Gender, Age,\nRural, Income,\nEducation"           = sum(lmg_rel[variable %in% c("female","quota_age","rural_urban",'hh_inc')]),
+    `Country`                     = sum(lmg_rel[variable=="cntry"]),
+    .groups = "drop"
+  ) %>%
+  #pivot_longer(everything(),names_to="variable_type", values_to="lmg_rel") %>%
+  pivot_longer(-c(imp_exp_pol_assign), names_to="variable_type", values_to="lmg_rel") %>%
+  mutate(
+    variable_label_html = case_when(
+      variable_type %in% c("Well-being", "Effectiveness") ~ paste0("",variable_type),
+      variable_type %in% c("National economy", "Household finances") ~ paste0("", variable_type), 
+      # Everything else as-is
+      TRUE ~ variable_type
+    ),
+    variable_label_html = factor(
+      variable_label_html,
+      levels = rev(c(
+        "Low income",
+        "Middle class",
+        'Effectiveness',
+        'Well-being',
+        'Household finances' ,
+        'National economy',
+        "Biospheric value",
+        "Climate worry",
+        "Political orientation",
+        "Trust, EU",
+        "Trust, country",
+        "Gender, Age,\nRural, Income,\nEducation",
+        "Country"
+      ))
+    ),
+    factor_group = case_when(
+      variable_type %in% c('Effectiveness','Well-being','Household finances','National economy') ~ 'Policy Evaluations',
+      #variable_type %in% c('Household finances','National economy') ~ 'Costs',
+      variable_type %in% c('Low income','Middle class') ~ 'Fairness',
+      variable_type %in% c('Biospheric value','Climate worry','Political orientation','Trust, EU','Trust, country') ~ 'Attitudes',
+       variable_type %in% c('Country',"Gender, Age,\nRural, Income,\nEducation") ~ 'Sociodemographics',
+    ),
+    factor_group = factor(factor_group)
+  )
+View(df_plot)
+
+p_fair <- ggplot(df_plot,
+            aes(x = lmg_rel, y = variable_label_html,color = imp_exp_pol_assign, group = factor_group)) +
+  geom_point(position = position_dodge(width = 0), size = 4) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c(       'Tax fossil fuel profits',
+                                        'Mandatory insulation',
+                                        'Tax beef',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions'))+
+  
+  labs(
+    x = "Percent of Explained Variance",
+    y = NULL,
+    title = "" # Shapley Decomposition of Explained Variance - Adaptation Only 
+  ) +
+  facet_grid(
+    rows   = vars(factor_group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  theme(
+    strip.placement = "outside",
+    strip.text.y.left = element_text(
+                         angle  = 90,     # vertical text (default)
+                         hjust  = 0.5,    # centre on the strip
+                         vjust  = 0.5,
+                         size   = 12,
+                         face   = "bold",
+                         margin = margin(r = 8)),
+panel.spacing.y    = unit(1, "lines"),
+strip.background.y = element_rect(fill = "grey90", colour = NA),
+    legend.position       = "bottom",
+    panel.grid.major.y    = element_blank(),
+axis.text.y = element_text(size=14),
+    axis.title.x = element_text(size=14),
+    legend.text = element_text(size=14),
+    legend.title = element_text(size=14)
+    # element_markdown() will render our HTML arrows & styling
+    #axis.text.y           = element_markdown(hjust = 0, lineheight = 0.9)
+  ) # +  theme_minimal(base_size = 12) +
+p_fair
+
+ggsave("figures_r1/final/SM_Fairness_ExplainedVar.png",height=13, width=10)
+
+
+```
+
+```{r sim_impacts}
+
+#-------------------------------------------------------------------------------
+# Subset the data (mitig vs adap, all rel preds)
+#-------------------------------------------------------------------------------
+
+preds_imps_z_overall = c("gen_trust_cnty_z", "gen_trust_EU_z", 
+          "poli_ori_z", 
+          "clim_worry_z",
+          "val_bio1_z",
+          "female", "quota_age", "rural",'hh_inc_z',"quota_group_educ"
+          ) 
+
+#-------------------------------------------------------------------------------
+# Fit the models -- one per policy or mitig/adap index?
+#-------------------------------------------------------------------------------
+
+# Fit weighted regression model
+# model <- svyglm(
+#   your_formula ~ predictor1 + predictor2 + ...,
+#   design = survey_design,
+#   family = gaussian()  # or family = quasibinomial() for ordinal outcomes
+# )
+
+## set up models - mandatory insulation
+sub=full_rec_std %>% filter(imp_exp_pol_assign == "Mandatory insulation")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+# wellbeing
+m_impwb_insu <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_wb"),
+                    design = survey_design,
+                    family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub)
+car::vif(m_impwb_insu)
+summary(m_impwb_insu)
+
+## mandatory insulation, effectiveness
+m_impgoal_insu <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_goal"),
+                    design = survey_design,
+                    family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub)
+
+car::vif(m_impgoal_insu)
+summary(m_impgoal_insu)
+
+
+## mandatory insulation, national economy
+m_impnat_insu <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_econ"),
+                    design = survey_design,
+                    family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub)
+
+car::vif(m_impnat_insu)
+
+## mandatory insulation, household finances
+m_impfin_insu <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_fin"),
+                    design = survey_design,
+                    family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub)
+
+car::vif(m_impfin_insu)
+
+
+## CNTY_pol_taxff, 
+sub=full_rec_std %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+#wellbeing
+m_impwb_taxff <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_wb"),
+                  design = survey_design,
+                  family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub
+                  )
+
+car::vif(m_impwb_taxff)
+summary(m_impwb_taxff)
+
+## CNTY_pol_taxff, effectiveness
+m_impgoal_taxff <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_goal"),
+                  design = survey_design,
+                  family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub
+             )
+car::vif(m_impgoal_taxff)
+
+## CNTY_pol_taxff, national economy
+m_impnat_taxff <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_econ"),
+                  design = survey_design,
+                  family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub
+             )
+car::vif(m_impnat_taxff)
+
+## CNTY_pol_taxff, household finances
+m_impfin_taxff <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_fin"),
+                  design = survey_design,
+                  family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+                  data = sub
+             )
+car::vif(m_impfin_taxff)
+
+## CNTY_pol_taxfly, wellbeing
+sub=full_rec_std %>% filter(imp_exp_pol_assign == "Tax flights")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_impwb_taxfly <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_wb"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## CNTY_pol_taxfly, effectiveness
+m_impgoal_taxfly <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_goal"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## CNTY_pol_taxfly, national economy
+m_impnat_taxfly <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_econ"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## CNTY_pol_taxfly, finances
+m_impfin_taxfly <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_fin"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+
+## EU_pol_waterconserve, wellbeing
+sub=full_rec_std %>% filter(imp_exp_pol_assign == "Resilience investment")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_impwb_waterconserve <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_wb"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## EU_pol_waterconserve, effectiveness
+m_impgoal_waterconserve <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_goal"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## EU_pol_waterconserve, national economy
+m_impnat_waterconserve <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_econ"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## EU_pol_waterconserve, finances
+m_impfin_waterconserve <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_fin"),
+             design = survey_design,
+             family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+             data = sub
+             )
+
+## EU_pol_build, wellbeing
+sub=full_rec_std %>% filter(imp_exp_pol_assign == "Building restrictions")
+survey_design <- svydesign(ids = ~1, weights = ~weights, data = sub)
+
+m_impwb_build <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_wb"),
+            design = survey_design,
+            family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+            data = sub
+             )
+
+## EU_pol_build, effectiveness
+m_impgoal_build <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_goal"),
+            design = survey_design,
+            family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+            data = sub
+             )
+
+## EU_pol_build, national economy
+m_impnat_build <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_econ"),
+            design = survey_design,
+            family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+            data = sub
+             )
+
+## EU_pol_build, wellbeing
+m_impfin_build <- svyglm(reformulate(preds_imps_z_overall, response = "imp_exp_fin"),
+            design = survey_design,
+            family = gaussian(),  # or family = quasibinomial() for ordinal outcomes
+            data = sub
+             )
+
+#-------------------------------------------------------------------------------
+# Simulate coefficients (one for each model)
+#-------------------------------------------------------------------------------
+# Extract simulations from the weighted model
+library(arm)  # for sim()
+set.seed(123)
+
+# Function to simulate coefficients from svyglm
+sim_svyglm <- function(model, n.sims = 1000) {
+  # Extract coefficients and variance-covariance matrix
+  beta_hat <- coef(model)
+  V <- vcov(model)
+  
+  # Simulate from multivariate normal
+  library(MASS)
+  beta_sims <- mvrnorm(n.sims, mu = beta_hat, Sigma = V)
+  
+  # Return in a format similar to sim() output
+  list(
+    coef = beta_sims,
+    sigma = summary(model)$dispersion  # For reference
+  )
+}
+
+# mandatory insulation
+sims_impwb_insu <- sim_svyglm(m_impwb_insu, n.sims = 1000)
+sims_impgoal_insu <- sim_svyglm(m_impgoal_insu, n.sims = 1000)
+sims_impnat_insu <- sim_svyglm(m_impnat_insu, n.sims = 1000)
+sims_impfin_insu <- sim_svyglm(m_impfin_insu, n.sims = 1000)
+
+# tax fossil fuel profits
+sims_impwb_taxff <- sim_svyglm(m_impwb_taxff, n.sims = 1000)
+sims_impgoal_taxff <- sim_svyglm(m_impgoal_taxff, n.sims = 1000)
+sims_impnat_taxff <- sim_svyglm(m_impnat_taxff, n.sims = 1000)
+sims_impfin_taxff <- sim_svyglm(m_impfin_taxff, n.sims = 1000)
+
+# tax flights
+sims_impwb_taxfly <- sim_svyglm(m_impwb_taxfly, n.sims = 1000)
+sims_impgoal_taxfly <- sim_svyglm(m_impgoal_taxfly, n.sims = 1000)
+sims_impnat_taxfly <- sim_svyglm(m_impnat_taxfly, n.sims = 1000)
+sims_impfin_taxfly <- sim_svyglm(m_impfin_taxfly, n.sims = 1000)
+
+# waterconserve
+sims_impwb_waterconserve <- sim_svyglm(m_impwb_waterconserve, n.sims = 1000)
+sims_impgoal_waterconserve <- sim_svyglm(m_impgoal_waterconserve, n.sims = 1000)
+sims_impnat_waterconserve <- sim_svyglm(m_impnat_waterconserve, n.sims = 1000)
+sims_impfin_waterconserve <- sim_svyglm(m_impfin_waterconserve, n.sims = 1000)
+
+## build
+sims_impwb_build <- sim_svyglm(m_impwb_build, n.sims = 1000)
+sims_impgoal_build <- sim_svyglm(m_impgoal_build, n.sims = 1000)
+sims_impnat_build <- sim_svyglm(m_impnat_build, n.sims = 1000)
+sims_impfin_build <- sim_svyglm(m_impfin_build, n.sims = 1000)
+
+#-------------------------------------------------------------------------------
+# Apply
+#-------------------------------------------------------------------------------
+names(full_rec_std)
+# mandatory insulation
+EV_impwb_insu <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impwb_insu, sims_impwb_insu, 
+                        full_rec_std %>% filter(imp_exp_pol_assign == "Mandatory insulation") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_wb)),
+                         weights_var = 'weights')
+
+EV_impgoal_insu <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impgoal_insu, sims_impgoal_insu, 
+                                                                       full_rec_std %>% filter(imp_exp_pol_assign == "Mandatory insulation") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_goal)),
+                         weights_var = 'weights')
+
+EV_impnat_insu <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impnat_insu, sims_impnat_insu, full_rec_std %>% filter(imp_exp_pol_assign == "Mandatory insulation") %>% dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_econ)),
+                         weights_var = 'weights')
+
+EV_impfin_insu <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impfin_insu, sims_impfin_insu, 
+                                                                       full_rec_std %>% filter(imp_exp_pol_assign == "Mandatory insulation") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_fin)),
+                         weights_var = 'weights')
+
+
+# tax fossil fuel profits
+EV_impwb_taxff <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impwb_taxff, sims_impwb_taxff, 
+                                                                       full_rec_std %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_wb)),
+                         weights_var = 'weights')
+
+EV_impgoal_taxff <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impgoal_taxff, sims_impgoal_taxff, 
+                                                                       full_rec_std %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_goal)),
+                         weights_var = 'weights')
+
+EV_impnat_taxff <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impnat_taxff, sims_impnat_taxff, 
+                                                                       full_rec_std %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_econ)),
+                         weights_var = 'weights')
+
+EV_impfin_taxff <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impfin_taxff, sims_impfin_taxff, 
+                                                                       full_rec_std %>% filter(imp_exp_pol_assign == "Tax fossil fuel profits") %>%
+                                                                         dplyr::select(all_of(preds_imps_z_overall),weights,imp_exp_fin)),
+                         weights_var = 'weights')
+
+
+
+# taxfly -- why these different from the tohers?
+EV_impwb_taxfly <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impwb_taxfly, sims_impwb_taxfly, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Tax flights")),weights_var='weights')
+
+EV_impgoal_taxfly <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impgoal_taxfly, sims_impgoal_taxfly, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Tax flights")),weights_var='weights')
+
+EV_impnat_taxfly <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impnat_taxfly, sims_impnat_taxfly, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Tax flights")),weights_var='weights')
+
+EV_impfin_taxfly <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impfin_taxfly, sims_impfin_taxfly, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Tax flights")),weights_var='weights')
+
+# waterconserve
+EV_impwb_waterconserve <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impwb_waterconserve, sims_impwb_waterconserve, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Resilience investment")),weights_var='weights')
+
+EV_impgoal_waterconserve <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impgoal_waterconserve, sims_impgoal_waterconserve, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Resilience investment")),weights_var='weights')
+
+EV_impnat_waterconserve <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impnat_waterconserve, sims_impnat_waterconserve, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Resilience investment")),weights_var='weights')
+
+EV_impfin_waterconserve <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impfin_waterconserve, sims_impfin_waterconserve, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Resilience investment")),weights_var='weights')
+
+# build 
+EV_impwb_build <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impwb_build, sims_impwb_build, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Building restrictions")),weights_var='weights')
+
+EV_impgoal_build <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impgoal_build, sims_impgoal_build, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Building restrictions")),weights_var='weights')
+
+EV_impnat_build <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impnat_build, sims_impnat_build, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Building restrictions")),weights_var='weights')
+
+EV_impfin_build <- map_dfr(preds_imps_z_overall, ~simulate_expected_change_std(.x, m_impfin_build, sims_impfin_build, full_rec_std 
+             %>% filter(imp_exp_pol_assign == "Building restrictions")),weights_var='weights')
+
+
+## combine
+EV_impwb_insu    <- EV_impwb_insu    %>% mutate(policy = "Mandatory insulation",imp = 'Well-being')
+EV_impgoal_insu    <- EV_impgoal_insu    %>% mutate(policy = "Mandatory insulation",imp = 'Effectiveness')
+EV_impnat_insu    <- EV_impnat_insu    %>% mutate(policy = "Mandatory insulation",imp = 'National economy')
+EV_impfin_insu    <- EV_impfin_insu    %>% mutate(policy = "Mandatory insulation",imp = 'Household finances')
+
+EV_impwb_taxff    <- EV_impwb_taxff    %>% mutate(policy = "Tax fossil fuel profits",imp = 'Well-being')
+EV_impgoal_taxff    <- EV_impgoal_taxff    %>% mutate(policy = "Tax fossil fuel profits",imp = 'Effectiveness')
+EV_impnat_taxff    <- EV_impnat_taxff    %>% mutate(policy = "Tax fossil fuel profits",imp = 'National economy')
+EV_impfin_taxff    <- EV_impfin_taxff    %>% mutate(policy = "Tax fossil fuel profits",imp = 'Household finances')
+
+EV_impwb_taxfly <- EV_impwb_taxfly %>% mutate(policy = "Tax flights",imp = 'Well-being')
+EV_impgoal_taxfly    <- EV_impgoal_taxfly    %>% mutate(policy = "Tax flights",imp = 'Effectiveness')
+EV_impnat_taxfly  <- EV_impnat_taxfly    %>% mutate(policy = "Tax flights",imp = 'National economy')
+EV_impfin_taxfly   <- EV_impfin_taxfly    %>% mutate(policy = "Tax flights",imp = 'Household finances')
+
+
+EV_impwb_waterconserve <- EV_impwb_waterconserve %>% mutate(policy = "Resilience investment",imp = 'Well-being')
+EV_impgoal_waterconserve <- EV_impgoal_waterconserve  %>% mutate(policy = "Resilience investment",imp = 'Effectiveness')
+EV_impnat_waterconserve <- EV_impnat_waterconserve  %>% mutate(policy = "Resilience investment",imp = 'National economy')
+EV_impfin_waterconserve <- EV_impfin_waterconserve  %>% mutate(policy = "Resilience investment",imp = 'Household finances')
+
+EV_impwb_build <- EV_impwb_build %>% mutate(policy = "Building restrictions",imp = 'Well-being')
+EV_impgoal_build <- EV_impgoal_build  %>% mutate(policy = "Building restrictions",imp = 'Effectiveness')
+EV_impnat_build <- EV_impnat_build  %>% mutate(policy = "Building restrictions",imp = 'National economy')
+EV_impfin_build <- EV_impfin_build  %>% mutate(policy = "Building restrictions",imp = 'Household finances')
+
+
+#-------------------------------------------------------------------------------
+# Prep plot
+#-------------------------------------------------------------------------------
+term_levels <- c(
+  "Trust, country","Trust, EU",
+  "Political orientation", 
+  "Climate worry",# 
+  "Biospheric value",
+ # "Country",
+  "Female","Age","Education","Rural","Household Income"
+)
+
+group_levels <- c("Socio-demographics",
+                 'Policy Evaluations',
+                  "Attitudes"
+                  )
+impact_levels =  c("Well-being","Effectiveness","National economy","Household finances")
+
+policy_levels <- c("Mandatory insulation","Tax fossil fuel profits",
+                   "Tax flights",
+                    "Resilience investment","Building restrictions")#
+
+## now combine them
+#all_effects_overall <- bind_rows(EV_impwb_insu, EV_impgoal_insu, EV_impnat_insu, EV_impfin_insu)
+#all_effects_overall <- bind_rows(EV_impwb_taxff, EV_impgoal_taxff, EV_impnat_taxff, EV_impfin_taxff)
+#all_effects_overall <- bind_rows(EV_impwb_taxfly, EV_impgoal_taxfly, EV_impnat_taxfly, EV_impfin_taxfly)
+#all_effects_overall <- bind_rows(EV_impwb_waterconserve, EV_impgoal_waterconserve, EV_impnat_waterconserve, EV_impfin_waterconserve)
+all_effects_overall <- bind_rows(EV_impwb_build, EV_impgoal_build, EV_impnat_build, EV_impfin_build)
+
+all_effects_overall <- all_effects_overall %>%
+  mutate(
+    term_label = case_match(
+      variable,
+      "gen_trust_cnty_z" ~ "Trust, country",
+      "gen_trust_EU_z" ~ "Trust, EU",
+      "poli_ori_z" ~ "Political orientation",
+      "clim_worry_z" ~ "Climate worry",
+      "val_bio1_z" ~ "Biospheric value",
+      "female" ~ "Female",
+      "quota_age" ~ "Age",
+      "quota_group_educ" ~ "Education",
+      "rural" ~ "Rural",
+      "hh_inc_z" ~ "Household Income",
+      .default = variable
+    ),
+    group = case_match(
+      variable,
+      "gen_trust_cnty_z" ~ "Attitudes",
+      "gen_trust_EU_z" ~ "Attitudes",
+      "poli_ori_z" ~ "Attitudes",
+      "clim_worry_z" ~ "Attitudes",
+      "val_bio1_z" ~ "Attitudes",
+      "female" ~ "Socio-demographics",
+      "quota_age" ~ "Socio-demographics",
+      "quota_group_educ" ~ "Socio-demographics",
+       "rural" ~ "Socio-demographics",
+      "hh_inc_z" ~ "Socio-demographics",
+      .default = variable
+    ),
+    term_label = factor(term_label, levels = term_levels),
+    group = factor(group, levels = rev(group_levels)),
+    mitig_adap = ifelse(policy %in% c('Building restrictions','Resilience investment'),1,0),
+    mitig_adap = factor(mitig_adap,levels=c(0,1),labels=c('Mitigation','Adaptation')),
+    policy = factor(policy, levels = policy_levels),
+    policy_plot = factor(policy, levels = rev(policy_levels)),
+    impact = factor(imp, levels = impact_levels),
+    impact_plot = factor(impact, rev(impact_levels))
+  )
+
+#-------------------------------------------------------------------------------
+# Plot
+#-------------------------------------------------------------------------------
+#pdf("plots/04_expected_change_support_by_city.pdf", width = 10, height = 12)
+#View(all_effects_overall)
+overall <- ggplot(all_effects_overall %>% drop_na(any_of('term_label')),
+       aes(x = mean_diff, y = term_label,#shape = mitig_adap,
+           colour = impact, group = impact_plot)) +
+  geom_point(position = position_dodge(width = 0.6), size = 3.75) +
+  geom_errorbar(aes(xmin = lower_95, xmax = upper_95),
+                position = position_dodge(width = 0.6), width = 0.6) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey40") +
+  facet_grid(
+    rows   = vars(group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+  labs(x = "Expected change in impact perception valence", y = NULL, title = 'Building restrictions') + # +/- 1 SD
+  scale_x_continuous(limits = c(-1, 1.1)) +
+  #scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+  #                   name = "Policy Type") +
+  #scale_colour_manual(values=c("General mitigation" = "#9E3D22", "General adaptation" = "#2B5C8A")) + # "#FECEA3", #C4D8F3
+  #scale_colour_manual(values = city_colors) +
+  theme_minimal() +
+  theme(
+    legend.position='bottom',
+  strip.placement = "outside",
+  strip.text.y.left = element_text(
+                         angle  = 90,     # vertical text (default)
+                         hjust  = 0.5,    # centre on the strip
+                         vjust  = 0.5,
+                         size   = 12,
+                         face   = "bold",
+                         margin = margin(r = 8)),
+  panel.spacing.y    = unit(1, "lines"),
+  strip.background.y = element_rect(fill = "grey90", colour = NA),
+  axis.text.y        = element_text(size = 12, margin = margin(b = 35)),
+  axis.title         = element_text(size = 12),
+  axis.text.x        = element_text(size = 12),
+  legend.title       = element_blank(),
+  legend.text        = element_text(size = 10),
+  )
+  
+overall
+#ggsave('figures_r1/coeff_overall_clim_worry.png')
+ggsave('figures_r1/final/exp_sim_impacts_build_std.png',height=8, width=8)
+
+
+```
+
+```{r old sim fxs}
+# simulate_expected_change_unst <- function(varname, model, sims, data, weights_var = "weights") {
+#   
+#   # Build baseline - keep numeric variables as numeric!
+#   base <- data %>% 
+#     summarise(across(
+#       -weights_var, 
+#       ~ {
+#         
+#         if (is.numeric(.)) {
+#           # Keep as numeric - weighted mean
+#           weighted.mean(., w = data[[weights_var]], na.rm = TRUE)
+#         } else if (is.factor(.) || is.character(.)) {
+#           # For factors - weighted mode
+#           tbl <- tapply(data[[weights_var]], ., sum, na.rm = TRUE)
+#           modal_value <- names(which.max(tbl))
+#           if (is.factor(.)) {
+#             factor(modal_value, levels = levels(.))
+#           } else {
+#             modal_value
+#           }
+#         } else {
+#           mean(., na.rm = TRUE)  # Fallback
+#         }
+#       }
+#     )) 
+#   
+#   # Determine min/max values for the variable of interest
+#   if (is.factor(data[[varname]]) || is.character(data[[varname]])) {
+#     var_levels <- levels(factor(data[[varname]]))
+#     if (length(var_levels) < 2) return(NULL)
+#     
+#     min_val <- var_levels[1]
+#     max_val <- var_levels[length(var_levels)]
+#     
+#   } else {
+#     # For numeric variables - use weighted quantiles
+#     min_val <- weightedQuantile(data[[varname]], w = data[[weights_var]], 
+#                                 probs = 0.25, na.rm = TRUE)
+#     max_val <- weightedQuantile(data[[varname]], w = data[[weights_var]], 
+#                                 probs = 0.75, na.rm = TRUE)
+#   }
+#   
+#   # Create min and max scenarios
+#   x_min <- base
+#   x_max <- base
+#   x_min[[varname]] <- min_val
+#   x_max[[varname]] <- max_val
+#   
+#   # Ensure all factor variables have correct levels matching original data
+#   for (col in names(base)) {
+#     if (is.factor(data[[col]])) {
+#       x_min[[col]] <- factor(x_min[[col]], levels = levels(data[[col]]))
+#       x_max[[col]] <- factor(x_max[[col]], levels = levels(data[[col]]))
+#     }
+#   }
+#   
+#   # Create predictions using model matrix
+#   tryCatch({
+#     # Use the model's data to get proper structure
+#     X_min <- model.matrix(delete.response(terms(model)), data = x_min)
+#     X_max <- model.matrix(delete.response(terms(model)), data = x_max)
+#     
+#     # Simulate expected outcomes
+#     expected_min <- X_min %*% t(sims$coef)
+#     expected_max <- X_max %*% t(sims$coef)
+#     
+#     diffs <- as.vector(expected_max - expected_min)
+#     
+#     tibble(
+#       variable = varname,
+#       mean_diff = mean(diffs),
+#       lower_95 = quantile(diffs, 0.025),
+#       upper_95 = quantile(diffs, 0.975)
+#     )
+#   }, error = function(e) {
+#     warning(paste("Error processing", varname, ":", e$message))
+#     return(NULL)
+#   })
+# }
+# 
+# # Helper function for weighted quantiles
+# weightedQuantile <- function(x, w, probs, na.rm = FALSE) {
+#   if (na.rm) {
+#     keep <- !is.na(x) & !is.na(w)
+#     x <- x[keep]
+#     w <- w[keep]
+#   }
+#   ord <- order(x)
+#   x <- x[ord]
+#   w <- w[ord]
+#   cumw <- cumsum(w) / sum(w)
+#   approx(cumw, x, xout = probs, rule = 2)$y
+# }
+```
+
+```{R old relimp plot }
+# POLICY EVALUATIONS if plotted on own
+df_plot <- final_tbl_exc %>% 
+  group_by(imp_exp_pol_assign) %>%
+  summarise(
+    `Effectiveness`                  = sum(lmg_rel[variable=="imp_exp_goal"]),
+    `Well-being`                      = sum(lmg_rel[variable=="imp_exp_wb"]),
+    `Household finances`              = sum(lmg_rel[variable=="imp_exp_fin"]),
+    `National economy`                 = sum(lmg_rel[variable=="imp_exp_econ"]),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(-c(imp_exp_pol_assign), names_to="variable_type", values_to="lmg_rel") %>%
+  mutate(
+    variable_label_html = case_when(
+      variable_type %in% c("Well-being", "Effectiveness") ~ paste0("",variable_type),
+      variable_type %in% c("National economy", "Household finances") ~ paste0("", variable_type), 
+      # Everything else as-is
+      TRUE ~ variable_type
+    ),
+    variable_label_html = factor(
+      variable_label_html,
+      levels = rev(c(
+        'Effectiveness',
+        'Well-being',
+        'Household finances' ,
+        'National economy'
+        ))
+    ),
+    mitig_adap = ifelse(imp_exp_pol_assign %in% c('Resilience investment','Building restrictions'),1,0),
+    mitig_adap = factor(mitig_adap, levels = c(0,1),labels = c('Mitigation','Adaptation')),
+    imp_exp_pol_assign = factor(imp_exp_pol_assign,levels=policy_levels),
+    factor_group = case_when(
+      variable_type %in% c('Effectiveness','Well-being') ~ 'Benefits',
+      variable_type %in% c('National economy','Household finances') ~ 'Costs',
+    ),
+    factor_group = factor(factor_group)
+  )
+
+shap_full <- ggplot(df_plot,
+            aes(x = lmg_rel, y = variable_label_html,shape=mitig_adap,
+                color = imp_exp_pol_assign, group = factor_group)) + # mitig_adap
+  geom_point(position = position_dodge(width = 0), size = 4) +
+  scale_x_continuous(labels = scales::percent_format(accuracy = 1)) +
+  scale_shape_manual(values = c(17, 16),  # Triangle for general, circle for specific
+                     name = "Policy Type") +
+   scale_color_manual(values = policy_colors,
+                     name = "Policy",
+                     breaks = c(       'Tax fossil fuel profits',
+                                        'Mandatory insulation',
+                                        #'Tax beef',
+                                        'Tax flights',
+                                        'Resilience investment',
+                                        'Building restrictions'))+
+  facet_grid(
+    rows   = vars(factor_group),
+    scales = "free_y",
+    space  = "free_y",
+    switch = "y",                                   # ← left-hand strips
+    labeller = labeller(                            # ← automatic wrapping
+      group = label_wrap_gen(width = 17))) +
+
+  labs(
+    x = "Percent of Explained Variance",
+    y = '',
+    title = "" #color = guide_legend(title = NULL)
+  ) +
+  theme(
+      strip.placement = "outside",
+      strip.text.y.left = element_text(
+                         angle  = 90,     # vertical text (default)
+                         hjust  = 0.5,    # centre on the strip
+                         vjust  = 0.5,
+                         size   = 12,
+                         face   = "bold",
+                         margin = margin(r = 8)),
+  panel.spacing.y    = unit(1, "lines"),
+  strip.background.y = element_rect(fill = "grey90", colour = NA),
+    legend.position       = "bottom",
+    panel.grid.major.y    = element_blank(),
+    axis.text.y = element_text(size=14),
+    axis.title.x = element_text(size=14),
+    legend.text = element_text(size=14),
+    legend.title = element_text(size=14)
+    # element_markdown() will render our HTML arrows & styling
+    #axis.text.y           = element_markdown(hjust = 0, lineheight = 0.9)
+  ) + # +  theme_minimal(base_size = 12) +
+  guides(
+    color = guide_legend(
+      nrow = 2,
+      override.aes = list(
+        shape = c(17, 17, 17, 16, 16)  # Removed a 17, Match order of breaks
+      )
+    ),
+    shape = guide_legend(nrow = 2)
+  )
+
+shap_full 
+
+ggsave('figures_r1/final/Fig4_evaluations_WEIGHTED.png',plot=shap_full,height=5, width=13)
+```
